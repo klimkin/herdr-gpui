@@ -14,6 +14,7 @@ use std::sync::Arc;
 mod idle_reassert;
 mod padding;
 mod titlebar_navigation;
+mod wake;
 
 /// A coherent surface for `snapshot`, as the daemon projects one.
 pub(super) fn surface(snapshot: &ClientShellSnapshot, pane: &str) -> Arc<PaneSurfaceFrame> {

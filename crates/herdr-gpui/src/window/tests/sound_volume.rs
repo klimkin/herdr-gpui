@@ -21,7 +21,7 @@ fn window_ticks_leave_a_newer_volume_alone(cx: &mut gpui::TestAppContext) {
     cx.update(|window, cx| {
         view.update(cx, |view, cx| {
             for _ in 0..3 {
-                view.tick(window, cx);
+                view.tick(window, cx, false);
             }
         });
     });

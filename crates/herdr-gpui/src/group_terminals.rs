@@ -190,15 +190,6 @@ impl HerdrWindow {
         }
     }
 
-    /// Cheap enough for every display frame.
-    pub(crate) fn group_terminals_updated(&self) -> bool {
-        self.browser
-            .terminals
-            .parked
-            .iter()
-            .any(|parked| parked.connection.has_update())
-    }
-
     /// Settles which group holds the window's connection and which hold
     /// parked ones, after a tick or a group being used.
     pub(crate) fn reconcile_group_terminals(&mut self, cx: &mut Context<Self>) {
@@ -288,7 +279,10 @@ impl HerdrWindow {
                 Some(parked) => parked.steer(tab, now, last_input),
                 None if terminals.retry.iter().any(|(waiting, _)| waiting == group) => {}
                 None => {
-                    let mut connection = ConnectionBridge::new(target.clone());
+                    let mut connection = ConnectionBridge::new_with_wake(
+                        target.clone(),
+                        self.connection_wake.clone(),
+                    );
                     connection.reconnect(self.options, false, true);
                     terminals.parked.push(Parked {
                         group: *group,
@@ -349,12 +343,17 @@ impl HerdrWindow {
     /// Takes each parked connection's latest projection. Notifications and
     /// sounds reach every client, so only the window's own connection
     /// delivers them. Returns whether a parked group needs a redraw.
+    #[cfg(test)]
     pub(crate) fn poll_group_terminals(&mut self) -> bool {
+        self.poll_group_terminals_with_updates(true)
+    }
+
+    pub(crate) fn poll_group_terminals_with_updates(&mut self, incoming: bool) -> bool {
         let mut changed = false;
         let now = Instant::now();
         let terminals = &mut self.browser.terminals;
         for parked in &mut terminals.parked {
-            if let Some(mut update) = parked.connection.take_update() {
+            if incoming && let Some(mut update) = parked.connection.take_update() {
                 update.notifications.clear();
                 update.notifications_lost = false;
                 update.sound_events.clear();

@@ -25,7 +25,7 @@ pub(super) async fn sidebar_hosts(
         .update(cx, |view, window, cx| {
             view.endpoints.clear();
             for (index, label) in ["Local", REMOTE, "Disabled"].into_iter().enumerate() {
-                let mut endpoint = endpoint::Endpoint::new(
+                let mut endpoint = endpoint::Endpoint::new_with_wake(
                     if index == 0 {
                         endpoint::LOCAL.into()
                     } else {
@@ -34,6 +34,7 @@ pub(super) async fn sidebar_hosts(
                     label.into(),
                     ConnectTarget::Socket(format!("/unused-sidebar-{index}.sock").into()),
                     index != 2,
+                    view.connection_wake.clone(),
                 );
                 let mut snapshot = sidebar::layout_tests::snapshot(6);
                 snapshot.workspaces.drain(0..3);

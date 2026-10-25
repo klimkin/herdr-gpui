@@ -58,18 +58,14 @@ impl HerdrWindow {
         let sidebar_view = cx.new(|_| sidebar::SidebarView::new(weak, indicators));
         let hosts = vec![cx.entity_id(), sidebar_view.entity_id()];
         let mark_layer = cx.new(|cx| crate::mark_layer::MarkLayer::new(window, hosts, cx));
-        let timer = cx.background_executor().clone();
-        let poll = cx.spawn_in(window, async move |this, cx| {
-            loop {
-                timer.timer(Duration::from_millis(16)).await;
-                if this
-                    .update_in(cx, |this, window, cx| this.tick(window, cx))
-                    .is_err()
-                {
-                    break;
-                }
-            }
-        });
+        let (connection_wake, connection_events) = crate::connection::ConnectionWake::channel();
+        let poll = Self::spawn_scheduler(
+            window,
+            cx,
+            connection_events,
+            connection_wake.clone(),
+            Duration::from_millis(16),
+        );
         let appearance = cx
             .try_global::<crate::app::InitialAppearance>()
             .cloned()
@@ -169,6 +165,8 @@ impl HerdrWindow {
             config_load_revision: 0,
             config_watch: None,
             configured_terminal_size,
+            connection_settings_pending: false,
+            connection_wake: connection_wake.clone(),
             copy_mode: None,
             core_terminals: Default::default(),
             daemon_text: Default::default(),
@@ -182,12 +180,13 @@ impl HerdrWindow {
             dispatch_setups: Default::default(),
             editor_open: None,
             editor_panes: Vec::new(),
-            endpoints: vec![endpoint::Endpoint::new(
+            endpoints: vec![endpoint::Endpoint::new_with_wake(
                 endpoint::LOCAL.into(),
                 // i18n: data
                 "Local".into(),
                 target,
                 true,
+                connection_wake,
             )],
             fan_out: None,
             file_transfer: None,
@@ -341,7 +340,6 @@ impl HerdrWindow {
             }
             return this;
         }
-        Self::poll_on_frame(cx.entity().downgrade(), window);
         this.sidebar_preferences = this.endpoints[0]
             .connection
             .target

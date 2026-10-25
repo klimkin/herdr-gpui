@@ -337,11 +337,12 @@ impl HerdrWindow {
             {
                 previous.remove(index)
             } else {
-                Endpoint::new(
+                Endpoint::new_with_wake(
                     device.id,
                     device.label.clone(),
                     device.target.clone(),
                     device.enabled,
+                    self.connection_wake.clone(),
                 )
             };
             let changed =
