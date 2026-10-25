@@ -21,6 +21,7 @@ expect_used = "deny"
 unwrap_used = "deny"
 
 [workspace.dependencies]
+async-channel        = "2"
 url = "2"
 # ACP wire types for herdr-acp; its own transport, so no async runtime.
 acp                  = { default-features = false, package = "agent-client-protocol-schema", version = "1.12" }

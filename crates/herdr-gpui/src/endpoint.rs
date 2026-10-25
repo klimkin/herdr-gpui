@@ -215,11 +215,28 @@ impl Endpoint {
                 .and_then(|snapshot| snapshot.config_diagnostic.as_deref()),
         );
     }
+    #[cfg(test)]
     pub fn new(id: String, label: String, target: ConnectTarget, enabled: bool) -> Self {
+        Self::new_with_wake(
+            id,
+            label,
+            target,
+            enabled,
+            crate::connection::ConnectionWake::channel().0,
+        )
+    }
+
+    pub(crate) fn new_with_wake(
+        id: String,
+        label: String,
+        target: ConnectTarget,
+        enabled: bool,
+        wake: crate::connection::ConnectionWake,
+    ) -> Self {
         Self {
             id,
             label,
-            connection: ConnectionBridge::new(target),
+            connection: ConnectionBridge::new_with_wake(target, wake),
             enabled,
             saved: None,
             collapsed: false,
@@ -285,7 +302,7 @@ impl Endpoint {
     fn retarget(&mut self, target: ConnectTarget) {
         self.stop();
         self.outage = None;
-        self.connection = ConnectionBridge::new(target);
+        self.connection = ConnectionBridge::new_with_wake(target, self.connection.wake.clone());
         self.detached = false;
         self.attempts = 0;
         self.version_mismatch = None;
@@ -309,9 +326,14 @@ impl Endpoint {
         self.retry_at = Instant::now() + self.retry_delay();
     }
 
+    #[cfg(test)]
     fn poll(&mut self, now: Instant) -> Redraw {
+        self.poll_with_updates(now, true)
+    }
+
+    fn poll_with_updates(&mut self, now: Instant, incoming: bool) -> Redraw {
         let mut changed = Redraw::None;
-        if let Some(mut state) = self.connection.take_update() {
+        if incoming && let Some(mut state) = self.connection.take_update() {
             changed = if self.live.only_surface_changed(&state) {
                 Redraw::Terminal
             } else {
@@ -775,6 +797,8 @@ impl HerdrWindow {
         } else if let Ok(mut state) = endpoint.connection.inbox.try_lock() {
             state.set_outer_focus(false);
             state.invalidate_surface();
+            drop(state);
+            endpoint.connection.wake.notify();
         }
         endpoint.initial_surface = false;
         endpoint.live.invalidate_surface();

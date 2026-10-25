@@ -475,3 +475,32 @@ fn timeout_and_return_to_local_do_not_wait_for_remote_release(cx: &mut gpui::Tes
 }
 
 mod version_mismatch;
+
+#[test]
+fn maintenance_keeps_incoming_state_pending_and_retarget_keeps_window_wake() {
+    let (wake, events) = crate::connection::ConnectionWake::channel();
+    let mut endpoint = Endpoint::new_with_wake(
+        LOCAL.into(),
+        "Local".into(),
+        ConnectTarget::Local,
+        true,
+        wake,
+    );
+    endpoint
+        .connection
+        .inbox
+        .lock()
+        .unwrap()
+        .apply(ClientEvent::Disconnected {
+            reason: "incoming".into(),
+            ssh: None,
+        });
+    endpoint.poll_with_updates(Instant::now(), false);
+    assert!(endpoint.live.error.is_none());
+    endpoint.poll_with_updates(Instant::now(), true);
+    assert_eq!(endpoint.live.error.as_deref(), Some("incoming"));
+    endpoint.retarget(ConnectTarget::Socket("/unused-retarget.sock".into()));
+    events.try_recv().unwrap();
+    endpoint.connection.wake.notify();
+    assert_eq!(events.try_recv(), Ok(()));
+}

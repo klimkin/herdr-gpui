@@ -545,6 +545,8 @@ pub(crate) fn fixture_window(window: &mut Window, cx: &mut Context<HerdrWindow>)
     let focus = cx.focus_handle();
     let terminal_focus = HerdrWindow::leave_region_with_terminal(&focus, window, cx);
     HerdrWindow {
+        connection_settings_pending: false,
+        connection_wake: crate::connection::ConnectionWake::channel().0,
         _terminal_focus: terminal_focus,
         chrome_region: None,
         chats: Default::default(),

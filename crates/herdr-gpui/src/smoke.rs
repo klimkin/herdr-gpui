@@ -36,6 +36,17 @@ mod input_shutdown;
 mod sidebar_fixture;
 pub use sidebar_fixture::start_sidebar;
 
+#[path = "smoke_roundtrip.rs"]
+mod roundtrip;
+
+#[cfg(target_os = "linux")]
+#[path = "smoke_multipane.rs"]
+mod multipane;
+
+#[cfg(target_os = "linux")]
+#[path = "smoke_singleload.rs"]
+mod singleload;
+
 #[path = "smoke_notifications.rs"]
 mod notifications;
 use notifications::start_notifications;
@@ -230,6 +241,20 @@ fn create_external_workspace(
 }
 
 pub fn start(handle: WindowHandle<HerdrWindow>, cx: &mut App) {
+    #[cfg(target_os = "linux")]
+    if std::env::var_os("HERDR_SINGLELOAD_TEST").is_some() {
+        singleload::start(handle, cx);
+        return;
+    }
+    #[cfg(target_os = "linux")]
+    if std::env::var_os("HERDR_MULTIPANE_TEST").is_some() {
+        multipane::start(handle, cx);
+        return;
+    }
+    if std::env::var_os("HERDR_ROUNDTRIP_TEST").is_some() {
+        roundtrip::start(handle, cx);
+        return;
+    }
     let timer = cx.background_executor().clone();
     cx.spawn(async move |cx| {
         let mut step = 0;
