@@ -91,6 +91,10 @@ test-perf budget="30":
     cargo build --locked --release -p herdr-gpui --features integration-test
     HERDR_PERF_P95_MS="{{budget}}" target/release/herdr-gpui --performance-test
 
+# Measure shell output arrival in GUI state with an isolated daemon and native window.
+test-roundtrip binary:
+    HERDR_ROUNDTRIP_TEST=1 HERDR_TEST_BINARY="{{binary}}" cargo test --locked --release -p herdr-gpui --features integration-test --test live_gui native_gui_live -- --ignored --nocapture --exact
+
 # Compare UI variants written as GPUI code in `file` (the built-in demo when
 # empty) in a native window. "Send to agent" types the notes into the calling
 # Herdr pane through the running Herdr UI, else writes `feedback`; `capture` gets

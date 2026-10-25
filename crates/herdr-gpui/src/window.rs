@@ -42,6 +42,7 @@ mod reconnecting;
 mod regions;
 mod render;
 mod report_issue;
+mod scheduler;
 mod select_hint;
 mod selection;
 mod server_keys;
@@ -166,6 +167,8 @@ pub(crate) struct HerdrWindow {
     /// write straight to `config.terminal.size`, so this is what Reset Font
     /// Size restores; a session adjustment never reaches disk.
     pub(crate) configured_terminal_size: f32,
+    pub(crate) connection_settings_pending: bool,
+    pub(crate) connection_wake: crate::connection::ConnectionWake,
     /// Keyboard copy mode, when it holds the keyboard.
     pub(crate) copy_mode: Option<copy_mode::CopyModeState>,
     /// Prepared daemon announcement and release notes text.
@@ -475,26 +478,6 @@ impl HerdrWindow {
         self.sync_group_host_theme(&theme);
     }
 
-    /// Runs every display frame while the window draws, so a new surface is
-    /// shown on the refresh it arrives for instead of on the next timer tick.
-    fn poll_on_frame(this: WeakEntity<Self>, window: &mut Window) {
-        window.on_next_frame(move |window, cx| {
-            let alive = this.update(cx, |view, cx| {
-                if view
-                    .endpoints
-                    .iter()
-                    .any(|endpoint| endpoint.connection.has_update())
-                    || view.group_terminals_updated()
-                {
-                    view.tick(window, cx);
-                }
-            });
-            if alive.is_ok() {
-                Self::poll_on_frame(this, window);
-            }
-        });
-    }
-
     /// Stored chrome yields to anything changed before it arrived. A stored
     /// sort is a past toggle, so it overrides the daemon's from then on.
     pub(crate) fn apply_stored_chrome(&mut self, chrome: preferences::Chrome) {
@@ -530,7 +513,7 @@ impl HerdrWindow {
         }
     }
 
-    fn tick(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    fn tick(&mut self, window: &mut Window, cx: &mut Context<Self>, incoming: bool) {
         self.updater.set_channel(self.config.updates.channel);
         if self.updater.poll() {
             match self.updater.commit_restart() {
@@ -565,7 +548,7 @@ impl HerdrWindow {
                 .map(|s| (s.focused_workspace_id.clone(), s.focused_tab_id.clone()))
         };
         let old_tab = focused_tab(&self.live);
-        self.poll_endpoints(cx);
+        self.poll_endpoints_with_updates(cx, incoming);
         if self
             .icon_font_notice
             .observe(self.config.icon_font_missing, self.live.surface.as_deref())
@@ -576,7 +559,10 @@ impl HerdrWindow {
         self.ring_bell(window);
         self.poll_integrations(cx);
         self.poll_links(window, cx);
-        if self.settings.task.is_none() {
+        self.connection_settings_pending |= incoming;
+        // Keep an arrived reload pending while its background loader is busy.
+        if self.connection_settings_pending && self.settings.task.is_none() {
+            self.connection_settings_pending = false;
             let mut reload = false;
             for endpoint in &self.endpoints {
                 reload |= endpoint.connection.take_settings_reload();
@@ -598,7 +584,7 @@ impl HerdrWindow {
         }
         // After the focus check: a swap replaces `live` with another
         // connection's, which is not a move of this one's focus.
-        if self.poll_group_terminals() {
+        if self.poll_group_terminals_with_updates(incoming) {
             self.redraw_terminal(cx);
         }
         self.reconcile_group_terminals(cx);

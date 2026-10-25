@@ -495,10 +495,12 @@ impl LiveState {
     }
 
     /// Track activation without treating receipt or focus gain as presentation.
-    pub fn set_outer_focus(&mut self, focused: bool) {
+    pub fn set_outer_focus(&mut self, focused: bool) -> bool {
         // A focus report retried after inbox contention must still cause a draw.
-        self.dirty |= self.outer_focused != Some(focused);
+        let changed = self.outer_focused != Some(focused);
+        self.dirty |= changed;
         self.outer_focused = Some(focused);
+        changed
     }
 
     pub fn apply(&mut self, event: ClientEvent) {

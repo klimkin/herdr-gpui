@@ -13,7 +13,11 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
 };
 
+mod wake;
+pub(crate) use wake::ConnectionWake;
+
 pub(crate) struct ConnectionBridge {
+    pub(crate) wake: ConnectionWake,
     pub target: ConnectTarget,
     pub handle: Option<ClientHandle>,
     pub inbox: Arc<Mutex<LiveState>>,
@@ -23,6 +27,17 @@ pub(crate) struct ConnectionBridge {
     /// Scrollback answers, fenced with the connection like the main inbox.
     pub scrollback: Arc<Mutex<crate::scrollback::Inbox>>,
     sound_cancel: Arc<AtomicBool>,
+}
+
+fn publish_event(inbox: &Mutex<LiveState>, wake: &ConnectionWake, event: Option<ClientEvent>) {
+    if let Ok(mut state) = inbox.lock() {
+        match event {
+            Some(event) => state.apply(event),
+            // Side-channel answers must reach window consumers.
+            None => state.dirty = true,
+        }
+    }
+    wake.notify();
 }
 
 /// One integration operation, independent of the modal dialog response slot.
@@ -113,10 +128,16 @@ pub(crate) fn host_theme(theme: &Theme, light: bool) -> HostTheme {
 }
 
 impl ConnectionBridge {
+    #[cfg(test)]
     pub fn new(target: ConnectTarget) -> Self {
+        Self::new_with_wake(target, ConnectionWake::channel().0)
+    }
+
+    pub(crate) fn new_with_wake(target: ConnectTarget, wake: ConnectionWake) -> Self {
         let state = LiveState::default();
         Self {
             target,
+            wake,
             handle: None,
             sound_cancel: state.sound_connection_cancel.clone(),
             inbox: Arc::new(Mutex::new(state)),
@@ -147,6 +168,7 @@ impl ConnectionBridge {
         self.integrations = Arc::default();
         self.links = Arc::default();
         self.scrollback = Arc::default();
+        self.wake.notify();
     }
 
     pub fn detach(&mut self, active: bool) {
@@ -174,6 +196,7 @@ impl ConnectionBridge {
         self.drained = Arc::new(AtomicBool::new(false));
         let target = self.target.clone();
         let startup_inbox = self.inbox.clone();
+        let startup_wake = self.wake.clone();
         let result =
             connect_with_connector(target, options, surface_active, move |target, stop| {
                 #[cfg(feature = "cloud")]
@@ -187,6 +210,7 @@ impl ConnectionBridge {
                     {
                         state.daemon_starting();
                     }
+                    startup_wake.notify();
                 })
                 .map(|(stream, local)| {
                     if let Ok(mut state) = startup_inbox.lock() {
@@ -206,6 +230,7 @@ impl ConnectionBridge {
                         };
                         state.dirty = true;
                     }
+                    startup_wake.notify();
                     stream
                 });
                 if let Err(error) = &result {
@@ -219,11 +244,14 @@ impl ConnectionBridge {
                 if result
                     .as_ref()
                     .is_err_and(crate::daemon::is_missing_installation)
-                    && let Ok(mut state) = startup_inbox.lock()
-                    && state.status == ConnectionStatus::StartingDaemon
                 {
-                    state.missing_installation = true;
-                    state.dirty = true;
+                    if let Ok(mut state) = startup_inbox.lock()
+                        && state.status == ConnectionStatus::StartingDaemon
+                    {
+                        state.missing_installation = true;
+                        state.dirty = true;
+                    }
+                    startup_wake.notify();
                 }
                 result.map(herdr_client::Transport::from)
             })
@@ -231,6 +259,7 @@ impl ConnectionBridge {
             .and_then(|client| {
                 self.handle = Some(client.handle);
                 let inbox = self.inbox.clone();
+                let wake = self.wake.clone();
                 let drained = self.drained.clone();
                 let integrations = self.integrations.clone();
                 let links = self.links.clone();
@@ -255,16 +284,10 @@ impl ConnectionBridge {
                             Ok(mut links) => links.apply(event),
                             Err(_) => Some(event),
                         });
-                        if let Ok(mut state) = inbox.lock() {
-                            match event {
-                                Some(event) => state.apply(event),
-                                // A link answer changes nothing the live state
-                                // holds, but the window polls only when it is dirty.
-                                None => state.dirty = true,
-                            }
-                        }
+                        publish_event(&inbox, &wake, event);
                     }
                     drained.store(true, Ordering::Release);
+                    wake.notify();
                     tracing::debug!("Connection bridge event reader drained");
                 }))
                 .map_err(crate::Error::from)
@@ -284,12 +307,8 @@ impl ConnectionBridge {
                     ssh: None,
                 });
             }
+            self.wake.notify();
         }
-    }
-
-    /// Cheap enough to call every display frame: never blocks the UI thread.
-    pub fn has_update(&self) -> bool {
-        self.inbox.try_lock().is_ok_and(|state| state.dirty)
     }
 
     /// Whether the worker has reported this link up, which the window learns
@@ -303,7 +322,14 @@ impl ConnectionBridge {
     }
 
     pub fn take_update(&self) -> Option<LiveState> {
-        let mut state = self.inbox.try_lock().ok()?;
+        let mut state = match self.inbox.try_lock() {
+            Ok(state) => state,
+            Err(std::sync::TryLockError::WouldBlock) => {
+                self.wake.defer_inbox_read();
+                return None;
+            }
+            Err(std::sync::TryLockError::Poisoned(_)) => return None,
+        };
         if !state.dirty {
             return None;
         }

@@ -189,7 +189,12 @@ impl HerdrWindow {
             .inbox
             .try_lock()
         {
-            state.set_outer_focus(self.active && self.input_ready());
+            let focused = self.active && self.input_ready();
+            let changed = state.set_outer_focus(focused);
+            drop(state);
+            if changed {
+                self.connection_wake.notify();
+            }
         }
         if self.sent_focus == Some(focused) {
             return;

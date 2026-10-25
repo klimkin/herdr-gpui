@@ -32,7 +32,12 @@ impl HerdrWindow {
         true
     }
 
+    #[cfg(test)]
     pub(crate) fn poll_endpoints(&mut self, cx: &mut Context<Self>) {
+        self.poll_endpoints_with_updates(cx, true);
+    }
+
+    pub(crate) fn poll_endpoints_with_updates(&mut self, cx: &mut Context<Self>, incoming: bool) {
         self.recover_connections(
             Instant::now(),
             std::time::SystemTime::now(),
@@ -77,7 +82,7 @@ impl HerdrWindow {
             avatars.keep_links(|id| endpoints.iter().any(|endpoint| endpoint.id == id));
         }
         for (index, endpoint) in self.endpoints.iter_mut().enumerate() {
-            let updated = endpoint.poll(Instant::now());
+            let updated = endpoint.poll_with_updates(Instant::now(), incoming);
             // Nothing to keep current, or to silence, while nothing is muted.
             let muted = Mutes::any(cx)
                 .and(endpoint.live.latest_snapshot())
@@ -259,6 +264,8 @@ impl HerdrWindow {
                     self.activation_deadline = Some(Instant::now());
                 }
             }
+            drop(state);
+            endpoint.connection.wake.notify();
             changed = Redraw::Window;
         }
         // Held input precedes any deferred navigation.

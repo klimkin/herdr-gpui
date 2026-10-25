@@ -276,6 +276,8 @@ impl HerdrWindow {
             state.invalidate_surface();
             state.dirty = true;
             self.live = state.clone();
+            drop(state);
+            self.connection_wake.notify();
             self.activation_deadline = Some(
                 std::time::Instant::now()
                     + if failed {

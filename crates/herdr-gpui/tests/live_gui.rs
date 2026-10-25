@@ -238,6 +238,40 @@ fn native_gui_live() {
     let (mut isolated, status) = retry_timeouts("native GUI", || launch_gui_live(&binary));
     assert!(status.success(), "GUI failed: {status}");
     let log = fs::read_to_string(isolated.sandbox.dir.join("gui.log")).unwrap();
+    #[cfg(target_os = "linux")]
+    if std::env::var_os("HERDR_SINGLELOAD_TEST").is_some() {
+        eprintln!("GUI_CAPTURE_BEGIN\n{log}\nGUI_CAPTURE_END");
+        let rate = std::env::var("HERDR_SINGLELOAD_RATE").unwrap_or_else(|_| "2000".into());
+        assert!(
+            log.contains(&format!("GUI_SINGLELOAD_PASS rate={rate} samples=5")),
+            "{log}"
+        );
+        assert_eq!(log.matches("GUI_SINGLELOAD_ECHO_").count(), 5, "{log}");
+        return;
+    }
+    #[cfg(target_os = "linux")]
+    if std::env::var_os("HERDR_MULTIPANE_TEST").is_some() {
+        eprintln!("GUI_CAPTURE_BEGIN\n{log}\nGUI_CAPTURE_END");
+        let producers = if std::env::var("HERDR_MULTIPANE_RATE").as_deref() == Ok("0") {
+            0
+        } else {
+            7
+        };
+        assert!(
+            log.contains(&format!(
+                "GUI_MULTIPANE_PASS panes=8 producers={producers} samples=40"
+            )),
+            "{log}"
+        );
+        assert_eq!(log.matches("GUI_MULTIPANE_ECHO_MS").count(), 40, "{log}");
+        assert_eq!(log.matches("GUI_MULTIPANE_OUTPUT_MS").count(), 40, "{log}");
+        return;
+    }
+    if std::env::var_os("HERDR_ROUNDTRIP_TEST").is_some() {
+        eprintln!("GUI_CAPTURE_BEGIN\n{log}\nGUI_CAPTURE_END");
+        assert_eq!(log.matches("GUI_ROUNDTRIP_SAMPLE_MS").count(), 40, "{log}");
+        return;
+    }
     assert!(
         log.contains("GUI integration PASS:"),
         "GUI exited without completing harness"
@@ -299,6 +333,37 @@ fn launch_gui_live(binary: &Path) -> Option<(Isolated, ExitStatus)> {
         .sandbox
         .wait_for_daemon(isolated.daemon.as_mut().unwrap(), Duration::from_secs(20));
     let mut gui_command = gui_command(&isolated.sandbox, |name| std::env::var_os(name));
+    #[cfg(target_os = "linux")]
+    if std::env::var_os("HERDR_SINGLELOAD_TEST").is_some() {
+        use std::os::unix::fs::PermissionsExt;
+        let script = isolated.sandbox.dir.join("singleload.py");
+        fs::write(&script, include_str!("support/singleload.py")).unwrap();
+        fs::set_permissions(&script, fs::Permissions::from_mode(0o700)).unwrap();
+        gui_command.env("HERDR_SINGLELOAD_TEST", "1");
+        gui_command.env("HERDR_SINGLELOAD_SCRIPT", script);
+        for name in ["HERDR_SINGLELOAD_RATE", "HERDR_SINGLELOAD_PROBE_MS"] {
+            if let Some(value) = std::env::var_os(name) {
+                gui_command.env(name, value);
+            }
+        }
+    }
+    #[cfg(target_os = "linux")]
+    if std::env::var_os("HERDR_MULTIPANE_TEST").is_some() {
+        use std::os::unix::fs::PermissionsExt;
+        let script = isolated.sandbox.dir.join("multipane_load.py");
+        fs::write(&script, include_str!("support/multipane_load.py")).unwrap();
+        fs::set_permissions(&script, fs::Permissions::from_mode(0o700)).unwrap();
+        gui_command.env("HERDR_MULTIPANE_TEST", "1");
+        gui_command.env("HERDR_MULTIPANE_SCRIPT", script);
+        for name in ["HERDR_MULTIPANE_RATE", "HERDR_MULTIPANE_PROBE_MS"] {
+            if let Some(value) = std::env::var_os(name) {
+                gui_command.env(name, value);
+            }
+        }
+    }
+    if std::env::var_os("HERDR_ROUNDTRIP_TEST").is_some() {
+        gui_command.env("HERDR_ROUNDTRIP_TEST", "1");
+    }
     #[cfg(target_os = "macos")]
     {
         use std::os::unix::fs::PermissionsExt;
