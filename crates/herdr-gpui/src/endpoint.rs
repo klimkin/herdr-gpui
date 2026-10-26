@@ -21,6 +21,7 @@ mod history;
 mod order;
 pub(crate) mod origin;
 mod polling;
+mod recent;
 mod wake;
 
 pub(super) use catalog::Catalog;
@@ -151,6 +152,8 @@ pub(super) struct Endpoint {
     pub(crate) last_seen: crate::palette::LastSeen,
     /// Back and Forward through the panes `live` has focused.
     pub(crate) history: history::History,
+    /// Ctrl-Tab through the panes `live` has focused, most recent first.
+    pub(crate) recent: recent::RecentPanes,
     pub generation: u64,
     pub(crate) toasts: crate::notifications::Toasts,
     /// Derived from `live.snapshot`; refreshed by `sync_live` whenever `live` changes.
@@ -208,6 +211,7 @@ impl Endpoint {
             && (self.live.activation_pending() || !self.live.supports_surface);
         self.history
             .observe(self.live.snapshot.as_deref(), navigating);
+        self.recent.observe(self.live.snapshot.as_deref());
         self.config_diagnostic.sync(
             self.live
                 .snapshot
@@ -244,6 +248,7 @@ impl Endpoint {
             live: LiveState::default(),
             last_seen: Default::default(),
             history: Default::default(),
+            recent: Default::default(),
             generation: 0,
             toasts: Default::default(),
             config_diagnostic: Default::default(),
