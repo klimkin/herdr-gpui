@@ -1619,6 +1619,19 @@ a strip squeezed by the sidebar, a panel, or a split gives up its tabs' room
 first, then drops the pair whole before the trailing controls would be
 pushed out.
 
+Ctrl-Tab (`recent_pane`) switches to the pane this connection focused most
+recently before the current one, the way an editor switches tabs: a quick tap
+goes back and forth between two panes, and holding Ctrl while pressing Tab
+again goes further back through the recently used panes, settling on the one
+reached when Ctrl comes up. Ctrl-Shift-Tab (`recent_pane_reverse`) goes the
+other way, starting from the least recently used pane. Closed panes are
+stepped over, the order (at most 100 panes) starts over when the daemon
+restarts, and a press made while the previous switch is still landing is
+ignored. The palette and the devices rail keep Ctrl-Tab for their own filters
+while they are open. A terminal program no longer receives Ctrl-Tab or
+Ctrl-Shift-Tab; unbind or rebind the two commands in `[keybindings]` to give
+the keys back.
+
 macOS keeps `Some(TitlebarOptions)` and the native Herdr window title/traffic lights,
 with transparent chrome and lights positioned at (9, 9) logical pixels. A full-width
 34px header blends `theme.surface` roughly 10% toward white, subtly lifting dark
@@ -4194,6 +4207,8 @@ Ctrl+Shift+U is left unbound for
   through the sidebar's rows on every listed host and wrap around,
   `switch_workspace` counts the selected host's rows, `focus_agent` counts the
   agent panel's, `last_pane` returns to the pane focused before this one,
+  `recent_pane`/`recent_pane_reverse` (Ctrl-Tab and Ctrl-Shift-Tab) step
+  through the recently used panes while their modifier stays held,
   `move_tab_previous`/`_next` wrap a tab at either end to the other, and
   `[keys.indexed]` combos bind the digits 1-9. On macOS, the prefix, its
   chords, and custom command shortcuts recognize a shifted key such as
