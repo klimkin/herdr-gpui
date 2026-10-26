@@ -664,6 +664,14 @@ impl HerdrWindow {
                 window.focus(&self.focus, cx);
                 return;
             }
+            Command::RecentPane | Command::RecentPaneReverse => {
+                let step = match command {
+                    Command::RecentPane => Step::Back,
+                    _ => Step::Forward,
+                };
+                self.switch_recent_pane(step, window, cx);
+                return;
+            }
             Command::Back | Command::Forward => {
                 let step = match command {
                     Command::Back => Step::Back,
