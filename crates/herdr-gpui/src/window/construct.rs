@@ -100,6 +100,7 @@ impl HerdrWindow {
                 this.publish_server_keymap(cx);
             } else {
                 this.shift_taps.cancel();
+                this.finish_recent_cycles();
                 this.disarm_prefix();
                 this.cancel_terminal_mouse(cx);
                 // A drag cut short is dropped; a selection kept for an

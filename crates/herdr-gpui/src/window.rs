@@ -38,6 +38,7 @@ mod mouse;
 mod pending_input;
 mod plugin_selection;
 pub(crate) mod prefix;
+mod recent_panes;
 mod reconnecting;
 mod regions;
 mod render;
