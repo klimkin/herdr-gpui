@@ -366,6 +366,8 @@ impl HerdrWindow {
                 | Command::GoToFile
                 | Command::WorktreeNotes
                 | Command::LastPane
+                | Command::RecentPane
+                | Command::RecentPaneReverse
                 | Command::Back
                 | Command::Forward
                 | Command::PreviousWorkspace

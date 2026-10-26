@@ -321,6 +321,10 @@ impl HerdrWindow {
         cx: &mut Context<Self>,
     ) {
         if self.menu.page.is_some() {
+            // The palette and the devices rail read Ctrl-Tab themselves.
+            if command.is_recent_pane() {
+                cx.propagate();
+            }
             return;
         }
         #[cfg(feature = "integration-test")]

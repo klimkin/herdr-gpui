@@ -101,6 +101,10 @@ pub enum Command {
     MoveTabNext,
     RenameTab,
     LastPane,
+    /// Steps through the panes this endpoint focused, most recent first,
+    /// for as long as the shortcut's modifier stays held.
+    RecentPane,
+    RecentPaneReverse,
     /// Back through the panes this endpoint has focused.
     Back,
     Forward,
@@ -126,6 +130,13 @@ pub enum Command {
     NextAgent,
     AgentNumber(u8),
     ReloadConfig,
+}
+
+impl Command {
+    /// Ctrl-Tab and its reverse, which an open menu keeps for itself.
+    pub fn is_recent_pane(self) -> bool {
+        matches!(self, Self::RecentPane | Self::RecentPaneReverse)
+    }
 }
 
 pub struct CommandInfo {
@@ -335,6 +346,16 @@ pub const COMMANDS: &[CommandInfo] = &[
         command: Command::LastPane,
         name: "last_pane",
         message: "commands-last-pane",
+    },
+    CommandInfo {
+        command: Command::RecentPane,
+        name: "recent_pane",
+        message: "commands-recent-pane",
+    },
+    CommandInfo {
+        command: Command::RecentPaneReverse,
+        name: "recent_pane_reverse",
+        message: "commands-recent-pane-reverse",
     },
     CommandInfo {
         command: Command::Back,
@@ -930,6 +951,8 @@ pub fn request(command: Command, snapshot: &ClientShellSnapshot) -> Option<(Meth
         | Command::RenameTab
         | Command::ReopenClosedTab
         | Command::LastPane
+        | Command::RecentPane
+        | Command::RecentPaneReverse
         | Command::Back
         | Command::Forward
         | Command::ResizeMode
