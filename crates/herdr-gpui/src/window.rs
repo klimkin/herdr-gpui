@@ -289,6 +289,8 @@ pub(crate) struct HerdrWindow {
     /// The frame on screen, kept across the gap between two projections.
     pub(crate) presentation: Presentation,
     pub(crate) pressed_terminal_link: Option<PressedLink>,
+    /// Ctrl-Tab's order: the panes focused on any endpoint, most recent first.
+    pub(crate) recent_panes: recent_panes::RecentPanes,
     /// The terminal grid's cached regions; see `regions`.
     pub(crate) regions: Vec<regions::RegionLayers>,
     /// Pages remote agents asked for, waiting for their port's forward.

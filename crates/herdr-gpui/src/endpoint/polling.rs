@@ -299,6 +299,11 @@ impl HerdrWindow {
             self.local_error = Some(error);
             changed = Redraw::Window;
         }
+        // Every snapshot, activation, or endpoint change redraws the window,
+        // so the order only needs a look then, not every frame.
+        if changed == Redraw::Window {
+            self.observe_recent_panes();
+        }
         self.sync_server_keymap(cx);
         match changed {
             Redraw::None => {}
