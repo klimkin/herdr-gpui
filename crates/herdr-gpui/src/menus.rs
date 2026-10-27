@@ -71,6 +71,7 @@ fn tab_layout_menu(current: TabLayoutMode) -> MenuItem {
 /// `old`, so a config reload knows to install it again.
 pub(crate) fn changed(old: &Config, new: &Config) -> bool {
     old.layout.mode != new.layout.mode
+        || old.show_menu_bar != new.show_menu_bar
         || old.tab_layout != new.tab_layout
         || old.features.qa_menu != new.features.qa_menu
 }
@@ -231,6 +232,14 @@ pub(crate) fn menus(config: &Config) -> Vec<Menu> {
                     },
                 ),
                 MenuItem::separator(),
+                #[cfg(any(target_os = "linux", windows))]
+                MenuItem::action(
+                    "Show Menu Bar",
+                    RunCommand {
+                        command: Command::ToggleMenuBar,
+                    },
+                )
+                .checked(config.show_menu_bar),
                 MenuItem::action(
                     "Toggle Full Screen",
                     RunCommand {

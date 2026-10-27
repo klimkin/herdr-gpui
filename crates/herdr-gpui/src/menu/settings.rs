@@ -374,6 +374,7 @@ impl HerdrWindow {
                 | Command::NextAgent
                 | Command::AgentNumber(_) => 1,
                 Command::NewWindow
+                | Command::ToggleMenuBar
                 | Command::ToggleSidebar
                 | Command::OpenCode
                 | Command::OpenPx0

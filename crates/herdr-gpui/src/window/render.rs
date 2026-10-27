@@ -732,7 +732,8 @@ impl Render for HerdrWindow {
         let merged = section.is_none()
             && slots
                 .first()
-                .is_some_and(|first| self.tabs_in_titlebar(first.id, cx));
+                .zip(slots.last())
+                .is_some_and(|(first, last)| self.tabs_in_titlebar(first.id, last.id, window, cx));
         let count = slots.len();
         let mut groups = Vec::with_capacity(count);
         for (slot, shown) in slots.into_iter().zip(shown) {
@@ -931,9 +932,10 @@ impl Render for HerdrWindow {
             .text_color(rgb(self.theme.foreground))
             .text_font(&self.config.ui)
             .text_size(px(self.config.ui.size))
-            .when(crate::menus::IN_WINDOW && !zen, |root| {
-                root.child(self.render_application_bar(window, cx))
-            })
+            .when(
+                crate::menus::IN_WINDOW && self.config.show_menu_bar && !zen,
+                |root| root.child(self.render_application_bar(window, cx)),
+            )
             .when(!merged && !zen, |root| {
                 root.child(self.render_titlebar(window, cx))
             })

@@ -29,6 +29,7 @@ mod images;
 mod input;
 mod layout_save;
 mod lifecycle;
+mod menu_bar;
 pub(crate) use lifecycle::reasserts;
 mod links;
 mod monitors;

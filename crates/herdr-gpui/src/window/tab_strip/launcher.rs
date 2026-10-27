@@ -20,6 +20,9 @@ pub(super) use deck::{card_offset, deal_toward, spread};
 /// The one-button launcher's height, and an agent's mark.
 const BUTTON: f32 = 24.;
 const ICON: f32 = 14.;
+const BUTTON_GAP: f32 = 6.;
+const BUTTON_PADDING: f32 = 6.;
+const GROUP_GAP: f32 = 2.;
 /// How long hidden agents take to slide out.
 const SLIDE: std::time::Duration = std::time::Duration::from_millis(180);
 
@@ -33,6 +36,55 @@ pub(super) enum Spot {
 }
 
 impl HerdrWindow {
+    pub(crate) fn strip_launcher_width(&self, window: &Window) -> f32 {
+        let agents = self.launcher_agents();
+        if agents.is_empty() {
+            return 0.;
+        }
+        let cell_width = self.tab_layout().new_tab_width();
+        match self.config.chat.launcher {
+            ChatLauncher::Beside | ChatLauncher::Leading | ChatLauncher::Trailing => {
+                agents.len() as f32 * cell_width
+            }
+            ChatLauncher::Button => {
+                let run = TextRun {
+                    len: 0,
+                    font: self.config.ui.font(),
+                    color: black(),
+                    background_color: None,
+                    underline: None,
+                    strikethrough: None,
+                };
+                let widest = agents
+                    .iter()
+                    .map(|agent| {
+                        let label = SharedString::from(agent.display_name());
+                        let run = TextRun {
+                            len: label.len(),
+                            ..run.clone()
+                        };
+                        f32::from(
+                            window
+                                .text_system()
+                                .shape_line(label, px(self.config.ui.size - 1.), &[run], None)
+                                .width,
+                        )
+                        .ceil()
+                    })
+                    .fold(0., f32::max);
+                // Reserve the expanded button so hovering cannot move the header.
+                widest
+                    + ICON
+                    + 2. * BUTTON_PADDING
+                    + BUTTON_GAP
+                    + 2.
+                    + GROUP_GAP
+                    + (agents.len() - 1) as f32 * cell_width
+            }
+            ChatLauncher::Off | ChatLauncher::Plus => 0.,
+        }
+    }
+
     /// The agents the strips offer: the installed ones, unless the launcher
     /// is off or no chat can start.
     fn launcher_agents(&self) -> Vec<Agent> {
@@ -208,7 +260,7 @@ impl HerdrWindow {
         let open = self.launcher_open(slot);
         let hover = self.theme.active;
         self.launcher_hover(slot, "chat-launcher-button", cx)
-            .gap(px(2.))
+            .gap(px(GROUP_GAP))
             .when(open && !others.is_empty(), |group| {
                 let width = self.tab_layout().new_tab_width() * others.len() as f32;
                 group.child(
@@ -226,8 +278,8 @@ impl HerdrWindow {
                     .cursor_pointer()
                     .hover(|style| style.bg(rgb(hover)))
                     .h(px(BUTTON))
-                    .px(px(6.))
-                    .gap(px(6.))
+                    .px(px(BUTTON_PADDING))
+                    .gap(px(BUTTON_GAP))
                     .border_1()
                     .border_color(rgb(self.theme.active))
                     .text_size(px(self.config.ui.size - 1.))

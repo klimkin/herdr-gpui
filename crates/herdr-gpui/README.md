@@ -76,6 +76,16 @@ The status dot pulses amber during local daemon startup and is red when disconne
 Healthy connections leave the status bar quiet; connection indicators live in the
 device picker. Startup, disconnection, and operation errors remain in the status bar.
 
+On Linux and Windows, hide the dedicated menu row with **Settings > General >
+Show menu bar**, **View > Show Menu Bar**, or **Toggle Menu Bar** in the command
+palette. **Menu** then sits beside the account in the header or the rightmost tab
+strip. **F10** opens it; **Escape** or **F10** closes it and restores keyboard
+focus. Narrow groups keep a separate header when the controls need more room.
+The preference applies live to all windows and persists as `show_menu_bar = false`
+in `config-gpui.local.toml`. From scripts, use
+`herdr-gpui config set show_menu_bar false` or `herdr-gpui run toggle_menu_bar`.
+macOS keeps its global menu bar.
+
 For split terminal panes within a tab, **Focus follows mouse** is on by default.
 Disable it in **Settings > Tabs & panes > Panes**, or run
 `herdr-gpui config set focus_follows_mouse false`.
