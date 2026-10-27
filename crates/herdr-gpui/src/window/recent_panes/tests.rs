@@ -8,10 +8,14 @@ use crate::{
     window::MockPeer,
 };
 use gpui::{Entity, Modifiers, TestAppContext, VisualTestContext};
-use herdr_client::protocol::{ClientShellSnapshot, FrameData, PaneSurfaceFrame};
+use herdr_client::{
+    ClientEvent, Method,
+    protocol::{ClientShellSnapshot, FrameData, PaneSurfaceFrame},
+};
 use serde_json::json;
 use std::sync::Arc;
 
+mod completion;
 mod endpoints;
 
 const BOOT: &str = "boot-v1";
@@ -116,6 +120,11 @@ fn connected<'a>(
     cx.update(|window, cx| {
         view.update(cx, |view, cx| {
             peer.prepare(view, cx);
+            *view.endpoints[view.selected_endpoint]
+                .connection
+                .inbox
+                .lock()
+                .unwrap() = view.live.clone();
             window.focus(&view.focus, cx);
         })
     });
@@ -153,6 +162,86 @@ fn focus_requests(peer: &mut MockPeer) -> Vec<String> {
             return panes;
         }
         panes.push(pane);
+    }
+}
+
+fn fenced() -> MockPeer {
+    MockPeer::welcoming(
+        &["pane.focus", "client_shell.surface.set"],
+        &["surface_interest", "presentation_effects_fence"],
+    )
+}
+
+fn surface_event(
+    view: &Entity<HerdrWindow>,
+    cx: &VisualTestContext,
+    snapshot: &ClientShellSnapshot,
+) -> ClientEvent {
+    let size = view.read_with(cx, |view, _| view.options.surface_size);
+    ClientEvent::Surface(Arc::new(PaneSurfaceFrame {
+        boot_id: snapshot.boot_id.clone(),
+        projection_revision: snapshot.revision,
+        surface_revision: snapshot.revision,
+        frame: FrameData {
+            width: size.cols,
+            height: size.rows,
+            cells: vec![],
+            cursor: None,
+            hyperlinks: vec![],
+            graphics: vec![],
+        },
+        panes: vec![],
+        splits: vec![],
+        popup: None,
+        graphics: Default::default(),
+    }))
+}
+
+fn publish(
+    view: &Entity<HerdrWindow>,
+    cx: &mut VisualTestContext,
+    events: impl IntoIterator<Item = ClientEvent>,
+) {
+    view.update(cx, |view, cx| {
+        {
+            let mut inbox = view.endpoints[view.selected_endpoint]
+                .connection
+                .inbox
+                .lock()
+                .unwrap();
+            for event in events {
+                inbox.apply(event);
+            }
+        }
+        view.poll_endpoints(cx);
+    });
+}
+
+fn barrier_response(
+    peer: &mut MockPeer,
+    view: &Entity<HerdrWindow>,
+    cx: &VisualTestContext,
+    revision: u64,
+) -> (ClientEvent, Vec<String>) {
+    let expected = view.read_with(cx, |view, _| {
+        view.live.activation.as_ref().unwrap().request.clone()
+    });
+    let mut focused = Vec::new();
+    loop {
+        let request = peer.request();
+        let id = request["id"].as_str().unwrap();
+        let result = if request["method"] == Method::ClientShellSurfaceSet.as_str() {
+            json!({"type": "client_shell_surface_set", "active": request["params"]["active"], "projection_revision": revision})
+        } else {
+            if request["method"] == "pane.focus" {
+                focused.push(request["params"]["pane_id"].as_str().unwrap().to_owned());
+            }
+            json!({"type": "ok"})
+        };
+        let event = peer.respond(BOOT, id, &json!({"id": id, "result": result}));
+        if id == expected {
+            return (event, focused);
+        }
     }
 }
 
@@ -284,29 +373,35 @@ fn leaving_the_window_settles_the_cycle(cx: &mut TestAppContext) {
     });
     cx.update(|window, _| window.activate_window());
     cx.run_until_parked();
-    let local = |snapshot| {
-        [order::Projection {
+    fn local(snapshot: &ClientShellSnapshot) -> [Projection<'_>; 1] {
+        [Projection {
             endpoint: LOCAL,
             snapshot: Some(snapshot),
         }]
-    };
+    }
     view.update(cx, |view, _| {
         let recent = &mut view.recent_panes;
         for pane in ["a", "b", "c"] {
-            recent.observe(&local(&snapshot(pane)), Some(key(LOCAL, pane)));
+            recent.observe(
+                &local(&snapshot(pane)),
+                Some(FocusObservation::Settled(key(LOCAL, pane))),
+            );
         }
         let (index, target) = recent
             .peek(Step::Back, &local(&snapshot("c")), Some(&key(LOCAL, "c")))
             .unwrap();
         assert_eq!(target, key(LOCAL, "b"));
-        recent.begin(index, Modifiers::control());
+        recent.begin(index, Modifiers::control(), Some(key(LOCAL, "c")));
     });
 
     cx.deactivate_window();
 
     view.update(cx, |view, _| {
         let recent = &mut view.recent_panes;
-        recent.observe(&local(&snapshot("b")), Some(key(LOCAL, "b")));
+        recent.observe(
+            &local(&snapshot("b")),
+            Some(FocusObservation::Settled(key(LOCAL, "b"))),
+        );
         // Settled on B, so the pane before it is C again.
         assert_eq!(
             recent.peek(Step::Back, &local(&snapshot("b")), Some(&key(LOCAL, "b"))),
