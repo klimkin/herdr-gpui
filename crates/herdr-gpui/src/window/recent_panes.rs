@@ -8,11 +8,11 @@ use super::HerdrWindow;
 use crate::{
     endpoint::{Endpoint, Step},
     navigation::NavigationTarget,
-    state::LiveState,
+    state::{ConnectionStatus, LiveState},
 };
 use gpui::{Context, ModifiersChangedEvent, Window};
 pub(crate) use order::RecentPanes;
-use order::{PaneKey, Projection};
+use order::{FocusObservation, PaneKey, Projection};
 
 impl HerdrWindow {
     pub(super) fn switch_recent_pane(
@@ -22,9 +22,18 @@ impl HerdrWindow {
         cx: &mut Context<Self>,
     ) {
         // Mid-composition the IME owns the keyboard, as for double Shift.
-        // Switching endpoints has no readiness check of its own, so a held
-        // Ctrl-Tab would otherwise hop on while the last switch activates.
-        if !self.marked.is_empty() || !self.input_ready() {
+        let endpoint = &self.endpoints[self.selected_endpoint];
+        let unavailable = endpoint.outage().is_some()
+            || matches!(
+                self.live.status,
+                ConnectionStatus::Disconnected | ConnectionStatus::Detached
+            )
+            || endpoint
+                .connection
+                .handle
+                .as_ref()
+                .is_none_or(|handle| handle.is_disconnected());
+        if !self.marked.is_empty() || (!self.input_ready() && !unavailable) {
             return;
         }
         let current = self.focused_pane();
@@ -43,7 +52,7 @@ impl HerdrWindow {
             self.navigate_endpoint(&key.endpoint, target, cx)
         };
         if went {
-            self.recent_panes.begin(index, window.modifiers());
+            self.recent_panes.begin(index, window.modifiers(), current);
             window.focus(&self.focus, cx);
         }
     }
@@ -64,7 +73,13 @@ impl HerdrWindow {
         let settled = self.pending_navigation.is_none()
             && self.pending_toast.is_none()
             && !self.live.activation_pending();
-        let focused = settled.then(|| self.focused_pane()).flatten();
+        let focused = settled.then(|| self.focused_pane()).flatten().map(|key| {
+            if self.live.supports_surface {
+                FocusObservation::Settled(key)
+            } else {
+                FocusObservation::Unfenced(key)
+            }
+        });
         let projections = projections(&self.endpoints, self.selected_endpoint, &self.live);
         self.recent_panes.observe(&projections, focused);
     }
@@ -100,7 +115,15 @@ fn projections<'a>(
             };
             Projection {
                 endpoint: &endpoint.id,
-                snapshot: live.snapshot.as_deref().filter(|_| endpoint.enabled),
+                snapshot: live.snapshot.as_deref().filter(|_| {
+                    endpoint.enabled
+                        && live.status.is_connected()
+                        && endpoint
+                            .connection
+                            .handle
+                            .as_ref()
+                            .is_some_and(|handle| !handle.is_disconnected())
+                }),
             }
         })
         .collect()

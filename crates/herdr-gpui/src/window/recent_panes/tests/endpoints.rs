@@ -5,15 +5,6 @@ use herdr_client::ConnectTarget;
 const REMOTE: &str = "remote";
 const HOSTS: &[&str] = &["x", "y"];
 
-/// A daemon that fences focus changes on the surface, as a current one does,
-/// which switching machines requires.
-fn fenced() -> MockPeer {
-    MockPeer::welcoming(
-        &["pane.focus", "client_shell.surface.set"],
-        &["surface_interest"],
-    )
-}
-
 /// Local, through `local`, and a remote device, through `remote`. The window
 /// went to the remote's X and came back to Local's D, so the order is D, X,
 /// C, B, A.
@@ -176,3 +167,5 @@ fn a_restarted_machine_forgets_only_its_own_panes(cx: &mut TestAppContext) {
     assert_eq!(focus_requests(&mut local), ["c"]);
     assert!(focus_requests(&mut remote).is_empty());
 }
+
+mod connectivity;
