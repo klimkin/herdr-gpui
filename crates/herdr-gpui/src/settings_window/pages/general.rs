@@ -83,11 +83,23 @@ impl SettingsWindow {
                         cx,
                     )),
             )
+            .when(crate::menus::IN_WINDOW, |page| {
+                page.child(
+                    ui::row(theme, "general-menu-bar", "Show menu bar")
+                        .description("Off: use Menu in the header or press F10.")
+                        .switch(self.preference_toggle(
+                            "general-menu-bar-toggle",
+                            self.config.show_menu_bar,
+                            Preference::ShowMenuBar(!self.config.show_menu_bar),
+                            cx,
+                        )),
+                )
+            })
             .when(cfg!(target_os = "linux"), |page| {
                 page.child(
                     ui::row(theme, "general-window-controls", "Show window controls")
                         .description(
-                            "Draw minimize, maximize, and close buttons in the menu bar. Disable \
+                            "Draw minimize, maximize, and close buttons beside the menu. Disable \
                              server-side decorations in your window manager to avoid a double bar.",
                         )
                         .switch(self.preference_toggle(

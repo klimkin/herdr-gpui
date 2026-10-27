@@ -13,6 +13,7 @@ mod gpu_settings;
 mod launch_at_login;
 mod layout_drafts;
 mod load_save;
+mod menu_bar;
 mod navigation_groups;
 mod navigation_resize;
 mod navigation_scroll;

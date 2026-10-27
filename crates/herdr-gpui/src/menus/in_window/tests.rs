@@ -19,6 +19,12 @@ fn draw(cx: &mut VisualTestContext) {
 
 #[cfg(any(target_os = "linux", windows))]
 mod bar;
+#[cfg(any(target_os = "linux", windows))]
+mod compact;
+#[cfg(any(target_os = "linux", windows))]
+mod compact_geometry;
+#[cfg(any(target_os = "linux", windows))]
+mod compact_launchers;
 mod config_change;
 #[cfg(any(target_os = "linux", windows))]
 mod dragging;

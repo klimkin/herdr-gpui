@@ -108,6 +108,10 @@ agent_checkpoints = true
 # scanned every five seconds with ss or lsof, a remote one over SSH; false
 # stops all scanning. Also under Settings > General.
 show_listening_ports = true
+# Linux/Windows: show the dedicated menu row. False moves Menu into the header.
+# F10 opens the menu in either mode; Escape or F10 closes it. Also under
+# Settings > General and View > Show Menu Bar. macOS keeps its global menu.
+show_menu_bar = true
 # Show latency and loss from this machine in the status bar, beside CPU and
 # memory. One timed TCP connect to 1.1.1.1:443 every 15 seconds, about a
 # megabyte a day, so it suits a metered link such as a phone hotspot. Also
@@ -118,7 +122,8 @@ show_network_quality = false
 # always get whole rows. Also under Settings > General.
 smooth_scroll = true
 # Linux only: draw minimize, maximize, and close buttons at the right end of the
-# menu bar. When true the window needs no title bar from the window manager;
+# menu bar, or the header when the menu row is hidden.
+# When true the window needs no title bar from the window manager;
 # disable server-side decorations in your compositor or window manager settings.
 # On Wayland without server-side decorations (GNOME), buttons are always shown
 # regardless of this setting.

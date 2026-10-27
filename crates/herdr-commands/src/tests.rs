@@ -1,5 +1,7 @@
 use super::*;
 
+mod menu_bar;
+
 fn snapshot() -> ClientShellSnapshot {
     serde_json::from_str(include_str!(
         "../../herdr-protocol/tests/fixtures/endpoint-snapshot-v1.json"
@@ -94,6 +96,8 @@ fn catalog_has_all_native_commands_and_gpui_shortcuts() {
         (AgentNumber(7), &[]),
         (AgentNumber(8), &[]),
         (AgentNumber(9), &[]),
+        #[cfg(any(target_os = "linux", windows))]
+        (ToggleMenuBar, &[]),
         (ToggleSidebar, &["cmd-b"]),
         (ToggleStatusBar, &["cmd-alt-b"]),
         (FocusNextRegion, &["cmd-f6"]),

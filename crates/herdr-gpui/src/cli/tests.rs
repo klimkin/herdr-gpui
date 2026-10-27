@@ -10,6 +10,7 @@ mod cloud_images;
 mod cloud_setup;
 mod control_commands;
 mod links;
+mod menu_bar;
 mod open_command;
 mod px0;
 mod remote;

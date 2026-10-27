@@ -11,6 +11,27 @@ async fn settle(cx: &mut AsyncApp) {
         .await;
 }
 
+async fn wait_for(
+    handle: WindowHandle<HerdrWindow>,
+    ready: impl Fn(&HerdrWindow, &Window) -> bool,
+    cx: &mut AsyncApp,
+) -> Result<()> {
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    loop {
+        if handle.update(cx, |view, window, _| ready(view, window))? {
+            return Ok(());
+        }
+        if std::time::Instant::now() >= deadline {
+            return handle.update(cx, |view, window, _| {
+                anyhow::bail!("native menu did not settle: viewport {:?}, bar {:?}, launcher {:?}, cover {:?}, page {:?}",
+                    window.viewport_size(), view.menu.application_bar.bar.get(),
+                    view.menu.application_bar.launcher.get(), view.menu.cover.get(), view.menu.page)
+            })?;
+        }
+        settle(cx).await;
+    }
+}
+
 fn key(handle: WindowHandle<HerdrWindow>, key: &str, cx: &mut AsyncApp) -> Result<()> {
     AnyWindowHandle::from(handle).update(cx, |_, window, cx| {
         let event = KeyDownEvent {
@@ -24,16 +45,54 @@ fn key(handle: WindowHandle<HerdrWindow>, key: &str, cx: &mut AsyncApp) -> Resul
 }
 
 pub(crate) async fn run(handle: WindowHandle<HerdrWindow>, cx: &mut AsyncApp) -> Result<()> {
-    for width in [1200., 360.] {
+    for (width, show_menu_bar) in [(1200., true), (360., true), (1200., false), (360., false)] {
         handle.update(cx, |view, window, cx| {
             view.dismiss_menu(window, cx);
             view.sidebar_visible = false;
+            view.config.show_menu_bar = show_menu_bar;
             window.resize(size(px(width), px(500.)));
             view.focus.focus(window, cx);
             cx.notify();
         })?;
-        settle(cx).await;
-        let button = handle.update(cx, |view, window, _| -> Result<_> {
+        // Native dispatch needs the post-transition tree even when the
+        // compositor withholds frame callbacks from an inactive window.
+        AnyWindowHandle::from(handle).update(cx, |_, window, cx| {
+            window.refresh();
+            window.draw(cx).clear(cx);
+        })?;
+        wait_for(
+            handle,
+            |view, window| {
+                let bounds = if show_menu_bar {
+                    view.menu.application_bar.bar.get()
+                } else {
+                    view.menu.application_bar.launcher.get()
+                };
+                bounds.size.width > px(0.)
+                    && bounds.left() >= px(0.)
+                    && bounds.right() <= window.viewport_size().width
+                    && (!show_menu_bar
+                        || view.menu.application_bar.buttons.borrow().len()
+                            == if view.compact_application_bar(window) {
+                                1
+                            } else {
+                                super::super::menus(&view.config).len()
+                            })
+            },
+            cx,
+        )
+        .await
+        .with_context(|| format!("chrome at width {width}, show_menu_bar={show_menu_bar}"))?;
+        let (button, compact) = handle.update(cx, |view, window, _| -> Result<_> {
+            if !show_menu_bar {
+                let button = view.menu.application_bar.launcher.get();
+                ensure!(button.size.width > px(0.), "compact menu was not painted");
+                ensure!(
+                    button.left() >= px(0.) && button.right() <= window.viewport_size().width,
+                    "compact menu clipped"
+                );
+                return Ok((button, true));
+            }
             let bar = view.menu.application_bar.bar.get();
             ensure!(bar.size.width > px(0.), "menu bar was not painted");
             ensure!(
@@ -43,7 +102,7 @@ pub(crate) async fn run(handle: WindowHandle<HerdrWindow>, cx: &mut AsyncApp) ->
             let buttons = view.menu.application_bar.buttons.borrow();
             ensure!(
                 buttons.len()
-                    == if width < 560. {
+                    == if view.compact_application_bar(window) {
                         1
                     } else {
                         super::super::menus(&view.config).len()
@@ -55,8 +114,14 @@ pub(crate) async fn run(handle: WindowHandle<HerdrWindow>, cx: &mut AsyncApp) ->
                     "heading clipped"
                 );
             }
-            buttons.first().copied().context("menu button missing")
+            Ok((
+                buttons.first().copied().context("menu button missing")?,
+                view.compact_application_bar(window),
+            ))
         })??;
+        handle.update(cx, |_, window, _| {
+            eprintln!("APPLICATION MENUS native: requested width {width}, actual viewport {:?}, show_menu_bar={show_menu_bar}", window.viewport_size());
+        })?;
         AnyWindowHandle::from(handle).update(cx, |_, window, cx| {
             let position = button.center();
             window.dispatch_event(
@@ -79,8 +144,14 @@ pub(crate) async fn run(handle: WindowHandle<HerdrWindow>, cx: &mut AsyncApp) ->
                 cx,
             );
         })?;
-        settle(cx).await;
-        if width < 560. {
+        wait_for(
+            handle,
+            |view, _| matches!(view.menu.cover.get(), crate::menu::Cover::Panel(_)),
+            cx,
+        )
+        .await
+        .with_context(|| format!("menu at width {width}, show_menu_bar={show_menu_bar}"))?;
+        if compact {
             key(handle, "enter", cx)?;
             settle(cx).await;
         }
@@ -113,7 +184,7 @@ pub(crate) async fn run(handle: WindowHandle<HerdrWindow>, cx: &mut AsyncApp) ->
         key(handle, "down", cx)?;
         key(handle, "up", cx)?;
         key(handle, "enter", cx)?; // About, from the shared native menu action.
-        settle(cx).await;
+        wait_for(handle, |view, _| view.menu.page == Some(Page::About), cx).await?;
         handle.update(cx, |view, window, cx| -> Result<()> {
             ensure!(
                 view.menu.page == Some(Page::About),
