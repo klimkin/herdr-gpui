@@ -23,6 +23,8 @@ pub(super) enum Availability {
     Always,
     /// Only while the drafted theme follows the system as a light/dark pair.
     FollowingSystemTheme,
+    /// Linux and Windows draw application menus inside each window.
+    InWindowMenus,
     /// Only on Windows, which has the only platform code for it.
     Windows,
 }
@@ -335,6 +337,13 @@ pub(super) const CATALOG: &[Entry] = &[
         "settings-general-smooth-scroll",
         "settings-general-smooth-scroll-description",
     ),
+    entry(
+        Section::General,
+        "general-menu-bar",
+        "settings-general-menu-bar",
+        "settings-general-menu-bar-description",
+    )
+    .only(Availability::InWindowMenus),
     // One per `[features]` flag; a test checks none is missing.
     // keep-sorted start
     feature(Feature::AcpChats),

@@ -2,6 +2,7 @@
 //! The shared popup state isolates terminal input; actions are dispatched only
 //! after restoring the focus from before the menu opened.
 
+mod launcher;
 #[cfg(all(feature = "integration-test", target_os = "linux"))]
 pub(crate) mod native;
 mod render;
@@ -17,6 +18,7 @@ use std::{
 pub(crate) struct Geometry {
     pub(crate) content: Rc<Cell<Bounds<Pixels>>>,
     bar: Rc<Cell<Bounds<Pixels>>>,
+    launcher: Rc<Cell<Bounds<Pixels>>>,
     buttons: Rc<RefCell<Vec<Bounds<Pixels>>>>,
 }
 
@@ -121,7 +123,8 @@ impl HerdrWindow {
             && event.keystroke.key == "f10"
             && event.keystroke.modifiers == Modifiers::default()
         {
-            self.open_application_menu(Some(0), window, cx);
+            let index = (self.config.show_menu_bar && !self.zen_layout()).then_some(0);
+            self.open_application_menu(index, window, cx);
             cx.stop_propagation();
             window.prevent_default();
         }

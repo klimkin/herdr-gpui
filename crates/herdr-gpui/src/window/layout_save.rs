@@ -61,6 +61,7 @@ impl<T> LatestSave<T> {
 #[derive(Default)]
 pub(super) struct LayoutSaves {
     pub(super) chat: LatestSave<ChatLayoutMode>,
+    pub(super) menu_bar: LatestSave<bool>,
     pub(super) sidebar: LatestSave<LayoutMode>,
     pub(super) tabs: LatestSave<TabLayoutMode>,
 }

@@ -311,6 +311,8 @@ fn view_menu_carries_the_font_size_full_screen_and_zen_commands() {
         ("Decrease Font Size", Command::DecreaseFontSize),
         ("Reset Font Size", Command::ResetFontSize),
         ("Devices Overview", Command::DevicesOverview),
+        #[cfg(any(target_os = "linux", windows))]
+        ("Show Menu Bar", Command::ToggleMenuBar),
         ("Toggle Full Screen", Command::ToggleFullScreen),
         ("Toggle Zen Mode", Command::ToggleZenMode),
     ];
