@@ -99,7 +99,7 @@ impl HerdrWindow {
                 this.publish_server_keymap(cx);
             } else {
                 this.shift_taps.cancel();
-                this.finish_recent_cycles();
+                this.recent_panes.finish();
                 this.disarm_prefix();
                 this.cancel_terminal_mouse(cx);
                 // A drag cut short is dropped; a selection kept for an
@@ -241,6 +241,7 @@ impl HerdrWindow {
             prefix_armed: false,
             presentation: Default::default(),
             pressed_terminal_link: None,
+            recent_panes: Default::default(),
             regions: Vec::new(),
             remote_browser: Vec::new(),
             removal: None,
