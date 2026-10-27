@@ -101,8 +101,8 @@ pub enum Command {
     MoveTabNext,
     RenameTab,
     LastPane,
-    /// Steps through the panes this endpoint focused, most recent first,
-    /// for as long as the shortcut's modifier stays held.
+    /// Steps through the panes this window focused across connected endpoints,
+    /// most recent first, while the shortcut's modifier stays held.
     RecentPane,
     RecentPaneReverse,
     /// Back through the panes this endpoint has focused.
