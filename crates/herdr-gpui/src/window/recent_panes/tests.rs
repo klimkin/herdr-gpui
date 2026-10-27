@@ -1,27 +1,30 @@
 #![allow(clippy::unwrap_used)]
 use super::*;
 use crate::{
+    endpoint::LOCAL,
     keymap::{Binding, DaemonKeys, Keymap},
     palette::Filter,
     sidebar::layout_tests::fixture_window,
     window::MockPeer,
 };
 use gpui::{Entity, Modifiers, TestAppContext, VisualTestContext};
-use herdr_client::protocol::ClientShellSnapshot;
+use herdr_client::protocol::{ClientShellSnapshot, FrameData, PaneSurfaceFrame};
 use serde_json::json;
 use std::sync::Arc;
+
+mod endpoints;
 
 const BOOT: &str = "boot-v1";
 const PANES: &[&str] = &["a", "b", "c", "d"];
 
-/// The fixture's snapshot with `PANES` open and `focused` focused.
-fn snapshot(focused: &str) -> ClientShellSnapshot {
+/// The fixture's snapshot with `panes` open and `focused` focused.
+fn showing(panes: &[&str], focused: &str) -> ClientShellSnapshot {
     let mut snapshot: ClientShellSnapshot = serde_json::from_str(include_str!(
         "../../../../herdr-protocol/tests/fixtures/endpoint-snapshot-v1.json"
     ))
     .unwrap();
     let pane = snapshot.panes[0].clone();
-    snapshot.panes = PANES
+    snapshot.panes = panes
         .iter()
         .map(|id| {
             let mut pane = pane.clone();
@@ -33,14 +36,65 @@ fn snapshot(focused: &str) -> ClientShellSnapshot {
     snapshot
 }
 
-/// The daemon reports `pane` focused, as the window's poll delivers it.
-fn land(view: &Entity<HerdrWindow>, cx: &mut VisualTestContext, pane: &str) {
-    view.update(cx, |view, _| {
-        view.live.snapshot = Some(Arc::new(snapshot(pane)));
-        let endpoint = &mut view.endpoints[view.selected_endpoint];
-        endpoint.live = view.live.clone();
-        endpoint.sync_live();
+fn snapshot(focused: &str) -> ClientShellSnapshot {
+    showing(PANES, focused)
+}
+
+fn key(endpoint: &str, pane: &str) -> PaneKey {
+    PaneKey {
+        endpoint: endpoint.into(),
+        pane: pane.into(),
+    }
+}
+
+/// The daemons answer what the window is waiting on: one it switched away
+/// from acknowledges letting go of its surface, and the selected one shows
+/// `snapshot` on a surface drawn at the window's size, as the window's poll
+/// delivers them.
+fn arrive(view: &Entity<HerdrWindow>, cx: &mut VisualTestContext, snapshot: ClientShellSnapshot) {
+    view.update(cx, |view, cx| {
+        for endpoint in &view.endpoints {
+            let mut inbox = endpoint.connection.inbox.lock().unwrap();
+            if let Some(release) = inbox.activation.as_mut().filter(|a| !a.active) {
+                release.revision = Some(1);
+            }
+        }
+        // Sends the activation a switch waits for, if any, before it is answered.
+        view.poll_endpoints(cx);
+        let size = view.options.surface_size;
+        let mut state = view.live.clone();
+        state.surface = Some(Arc::new(PaneSurfaceFrame {
+            boot_id: snapshot.boot_id.clone(),
+            projection_revision: snapshot.revision,
+            surface_revision: 1,
+            frame: FrameData {
+                width: size.cols,
+                height: size.rows,
+                cells: vec![],
+                cursor: None,
+                hyperlinks: vec![],
+                graphics: vec![],
+            },
+            panes: vec![],
+            splits: vec![],
+            popup: None,
+            graphics: Default::default(),
+        }));
+        state.snapshot = Some(Arc::new(snapshot));
+        state.activation = None;
+        state.dirty = true;
+        *view.endpoints[view.selected_endpoint]
+            .connection
+            .inbox
+            .lock()
+            .unwrap() = state;
+        view.poll_endpoints(cx);
     });
+}
+
+/// The daemon reports `pane` focused.
+fn land(view: &Entity<HerdrWindow>, cx: &mut VisualTestContext, pane: &str) {
+    arrive(view, cx, snapshot(pane));
 }
 
 /// A focused window under the app's key bindings, connected to `peer`, that
@@ -160,10 +214,10 @@ fn a_press_while_the_focus_is_landing_is_dropped(cx: &mut TestAppContext) {
     assert_eq!(focus_requests(&mut peer), ["c"]);
     // The cycle is still on C, so the next press goes on to B.
     view.read_with(cx, |view, _| {
-        let next = view.endpoints[view.selected_endpoint]
-            .recent
-            .peek(Step::Back, &snapshot("c"));
-        assert_eq!(next, Some((2, "b".to_owned())));
+        let next = view
+            .recent_panes
+            .peek(Step::Back, &view.projections(), Some(&key(LOCAL, "c")));
+        assert_eq!(next, Some((2, key(LOCAL, "b"))));
     });
 }
 
@@ -230,25 +284,33 @@ fn leaving_the_window_settles_the_cycle(cx: &mut TestAppContext) {
     });
     cx.update(|window, _| window.activate_window());
     cx.run_until_parked();
+    let local = |snapshot| {
+        [order::Projection {
+            endpoint: LOCAL,
+            snapshot: Some(snapshot),
+        }]
+    };
     view.update(cx, |view, _| {
-        let recent = &mut view.endpoints[view.selected_endpoint].recent;
+        let recent = &mut view.recent_panes;
         for pane in ["a", "b", "c"] {
-            recent.observe(Some(&snapshot(pane)));
+            recent.observe(&local(&snapshot(pane)), Some(key(LOCAL, pane)));
         }
-        let (index, pane) = recent.peek(Step::Back, &snapshot("c")).unwrap();
-        assert_eq!(pane, "b");
+        let (index, target) = recent
+            .peek(Step::Back, &local(&snapshot("c")), Some(&key(LOCAL, "c")))
+            .unwrap();
+        assert_eq!(target, key(LOCAL, "b"));
         recent.begin(index, Modifiers::control());
     });
 
     cx.deactivate_window();
 
     view.update(cx, |view, _| {
-        let recent = &mut view.endpoints[view.selected_endpoint].recent;
-        recent.observe(Some(&snapshot("b")));
+        let recent = &mut view.recent_panes;
+        recent.observe(&local(&snapshot("b")), Some(key(LOCAL, "b")));
         // Settled on B, so the pane before it is C again.
         assert_eq!(
-            recent.peek(Step::Back, &snapshot("b")),
-            Some((1, "c".to_owned()))
+            recent.peek(Step::Back, &local(&snapshot("b")), Some(&key(LOCAL, "b"))),
+            Some((1, key(LOCAL, "c")))
         );
     });
 }
