@@ -742,6 +742,11 @@ impl HerdrWindow {
                 .live
                 .status
                 .is_connected()
+            && self.endpoints[self.selected_endpoint]
+                .connection
+                .handle
+                .as_ref()
+                .is_some_and(|handle| !handle.is_disconnected())
             && !self.endpoints[self.selected_endpoint].live.supports_surface
         {
             self.local_error = Some("Current endpoint does not support surface switching".into());
