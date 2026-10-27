@@ -56,6 +56,9 @@ fn serve_chat(listener: UnixListener, next: mpsc::Receiver<()>) {
                 version: VERSION,
             },
         );
+        if next.recv().is_err() {
+            return;
+        }
         send(
             &mut writer,
             &ServerMessage::Snapshot {
@@ -127,6 +130,14 @@ async fn an_answer_streams_to_the_phone_as_it_is_written() {
         .insert(ConnectInfo(Peer(SocketAddr::from(([10, 0, 0, 4], 50_000)))));
     let response = router(state.clone()).oneshot(request).await.unwrap();
     let mut body = response.into_body().into_data_stream();
+    let initial = tokio::time::timeout(Duration::from_secs(5), body.next())
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    let initial = String::from_utf8_lossy(&initial);
+    assert!(initial.contains(r#"id=\"chat-turn\""#), "{initial}");
+    next.send(()).unwrap();
 
     // Reads the next patch that carries the answer, with its last word.
     let mut patch = async || loop {
@@ -145,7 +156,7 @@ async fn an_answer_streams_to_the_phone_as_it_is_written() {
     };
     let (first, word) = patch().await;
     assert_eq!(word, 0);
-    assert!(first.contains(r#"id=\"chat-turn\""#), "{first}");
+    assert!(first.contains(r#"id=\"entry-3\""#), "{first}");
     for expected in 1..WORDS {
         next.send(()).unwrap();
         let (chunk, word) = patch().await;
