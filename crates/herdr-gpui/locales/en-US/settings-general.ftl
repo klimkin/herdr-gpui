@@ -20,7 +20,7 @@ settings-general-language-system = System ({ $language })
 settings-general-language-unavailable = { $tag }, shown in { $language }
 
 settings-general-window-controls = Show window controls
-settings-general-window-controls-description = Draw minimize, maximize, and close buttons in the menu bar. Disable server-side decorations in your window manager to avoid a double bar.
+settings-general-window-controls-description = Draw minimize, maximize, and close buttons beside the menu. Disable server-side decorations in your window manager to avoid a double bar.
 settings-general-chat-layout = Chat layout
 settings-general-chat-layout-description = How chat views draw messages and the composer: on a timeline, as bubbles like Claude's app, as Claude Code's terminal screen, as a document, as one card per turn, as Messages bubbles, or in one quiet column like iA Writer. The button in a chat's header steps through them too.
 settings-general-chat-launcher = Chat launcher

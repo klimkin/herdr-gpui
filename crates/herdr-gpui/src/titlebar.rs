@@ -260,20 +260,31 @@ impl HerdrWindow {
             // complete the room before it.
             .when(!toggle, |leading| leading.ps(px(SIDEBAR_TOGGLE_INSET)))
             .when(
-                f32::from(window.viewport_size().width) >= NAVIGATION_MIN_WIDTH,
+                f32::from(window.viewport_size().width)
+                    >= NAVIGATION_MIN_WIDTH
+                        + if crate::menus::IN_WINDOW && !self.config.show_menu_bar {
+                            160.
+                        } else {
+                            0.
+                        },
                 |leading| leading.child(self.navigation(cx)),
             )
             .into_any_element();
-        render(
+        render_with_controls(
             self.fill().tint(bar(self.theme.surface)),
             Some(leading),
             window,
+            self.compact_menu_controls(),
         )
         .child(
             div()
                 .debug_selector(|| "titlebar-center".into())
                 .flex_1()
                 .min_w_0()
+                .when(
+                    crate::menus::IN_WINDOW && !self.config.show_menu_bar,
+                    |center| center.min_w(px(tabs::DRAG_ROOM)),
+                )
                 .h_full()
                 .when(self.config.usage.topbar, |center| {
                     center.child(status::render(&self.live, &self.config.ui, &self.theme))
@@ -319,8 +330,23 @@ impl HerdrWindow {
             .row()
             .flex_none()
             .items_center()
-            .children(self.render_git_button(cx))
-            .children(self.remote_indicator(cx))
+            .map(|end| {
+                if crate::menus::IN_WINDOW && !self.config.show_menu_bar {
+                    end.flex_shrink(1.).min_w_0().child(
+                        div()
+                            .flex()
+                            .flex_shrink(1.)
+                            .min_w_0()
+                            .overflow_hidden()
+                            .children(self.render_git_button(cx))
+                            .children(self.remote_indicator(cx)),
+                    )
+                } else {
+                    end.children(self.render_git_button(cx))
+                        .children(self.remote_indicator(cx))
+                }
+            })
+            .children(self.render_application_launcher(cx))
             .child(
                 div()
                     .debug_selector(|| "titlebar-account-slot".into())
@@ -415,11 +441,19 @@ impl HerdrWindow {
                     ),
             )
             // The in-window menu bar carries the window controls instead.
-            .when(!crate::menus::IN_WINDOW, |end| {
-                end.children(controls(false, window, &self.theme, |window, _| {
-                    window.remove_window();
-                }))
-            })
+            .when(
+                !crate::menus::IN_WINDOW || !self.config.show_menu_bar,
+                |end| {
+                    end.children(controls(
+                        self.compact_menu_controls(),
+                        window,
+                        &self.theme,
+                        |window, _| {
+                            window.remove_window();
+                        },
+                    ))
+                },
+            )
     }
 }
 
@@ -433,6 +467,15 @@ pub(super) fn render(
     background: Hsla,
     leading: Option<AnyElement>,
     window: &Window,
+) -> Stateful<Div> {
+    render_with_controls(background, leading, window, false)
+}
+
+fn render_with_controls(
+    background: Hsla,
+    leading: Option<AnyElement>,
+    window: &Window,
+    controls_enabled: bool,
 ) -> Stateful<Div> {
     // AppKit keeps the traffic lights on the left whatever the app's own
     // language, so a mirrored bar clears them on its end instead.
@@ -453,7 +496,7 @@ pub(super) fn render(
                 .h_full(),
         )
         .children(leading);
-    movable(bar, window)
+    movable_with_controls(bar, window, controls_enabled)
 }
 
 /// Makes `area` do a title bar's job: pressing it moves the window, and a

@@ -92,6 +92,7 @@ commands-swap-pane-up = Swap Pane Up
 commands-themes = Themes
 commands-toggle-annotate = Toggle Annotate
 commands-toggle-full-screen = Toggle Full Screen
+commands-toggle-menu-bar = Toggle Menu Bar
 commands-toggle-sidebar = Toggle Sidebar
 commands-toggle-status-bar = Toggle Status Bar
 commands-toggle-zen-mode = Toggle Zen Mode

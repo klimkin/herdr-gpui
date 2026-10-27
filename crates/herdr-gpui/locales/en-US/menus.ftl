@@ -36,6 +36,7 @@ menus-increase-font-size = Increase Font Size
 menus-decrease-font-size = Decrease Font Size
 menus-reset-font-size = Reset Font Size
 menus-devices-overview = Devices Overview
+menus-show-menu-bar = Show Menu Bar
 menus-toggle-full-screen = Toggle Full Screen
 menus-toggle-zen-mode = Toggle Zen Mode
 

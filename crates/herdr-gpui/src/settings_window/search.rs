@@ -49,6 +49,7 @@ impl SettingsWindow {
             catalog::Availability::FollowingSystemTheme => {
                 ThemeName::follows_system(self.drafted_theme())
             }
+            catalog::Availability::InWindowMenus => crate::menus::IN_WINDOW,
             catalog::Availability::Windows => cfg!(windows),
         }
     }

@@ -16,6 +16,7 @@ use gpui::{prelude::*, *};
 /// Empty room a strip keeps after its tabs so the window can always be
 /// moved from it, even when its tabs overflow.
 pub(crate) const DRAG_ROOM: f32 = 40.;
+const COMPACT_STRIP_BASE_WIDTH: f32 = 400.;
 
 /// How readily the strip's leading controls give up width: far less than the
 /// tabs, which shrink first, so they only narrow once the tabs have none.
@@ -51,10 +52,35 @@ impl HerdrWindow {
     /// Right to left, the window keeps the header: its controls mirror, but
     /// tabs stay left to right with the panes under them, and one row cannot
     /// read both ways.
-    pub(crate) fn tabs_in_titlebar(&self, first: GroupId, cx: &App) -> bool {
-        self.tab_bar_position() == TabBarPosition::Top
-            && !self.strip_hidden(first, cx)
-            && !crate::direction::is_rtl()
+    pub(crate) fn tabs_in_titlebar(
+        &self,
+        first: GroupId,
+        last: GroupId,
+        window: &Window,
+        cx: &App,
+    ) -> bool {
+        if self.tab_bar_position() != TabBarPosition::Top
+            || self.strip_hidden(first, cx)
+            || crate::direction::is_rtl()
+        {
+            return false;
+        }
+        if !crate::menus::IN_WINDOW || self.config.show_menu_bar {
+            return true;
+        }
+        // Keep mandatory menu/window controls and a grab area reachable when
+        // groups or the sidebar leave the rightmost strip too little room.
+        let viewport = f32::from(window.viewport_size().width);
+        let content = viewport - self.sidebar_column_width(viewport).unwrap_or(0.);
+        let controls = if super::show_controls(self.config.show_window_controls, window) {
+            112.
+        } else {
+            0.
+        };
+        let required = COMPACT_STRIP_BASE_WIDTH * self.config.ui.size / 12.
+            + controls
+            + self.strip_launcher_width(window);
+        content * self.group_share(last) >= required
     }
 
     /// Keep the toggle anchored in the sidebar whenever it fits. The rail has
@@ -269,7 +295,7 @@ impl HerdrWindow {
                     &self.theme,
                 ))
             });
-        movable(room, window)
+        super::movable_with_controls(room, window, self.compact_menu_controls())
     }
 }
 

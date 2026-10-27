@@ -73,6 +73,13 @@ Every command accepts:
 | `commands` | The names `run` accepts (no app needed) |
 | `open DIR` | Open a folder as **Open Project** in the palette does, starting the app if needed (below) |
 
+On Linux and Windows, `herdr-gpui config set show_menu_bar false` hides the
+menu row and puts **Menu** in the header. Set it to `true` to restore the row,
+or use `herdr-gpui run toggle_menu_bar` to switch. Both accept `--json` and
+`--window ID`. The preference persists and applies live to open windows.
+**F10** opens the menu in either mode; **Escape** or **F10** dismisses it.
+macOS keeps its global menu bar.
+
 `open DIR` checks the folder where you run it and resolves it to an absolute,
 canonical path. A path that does not exist exits 5; a file, or a folder in a
 device namespace (`\\.\…`, `\\?\GLOBALROOT\…`, and on Unix `/dev`, `/proc`,

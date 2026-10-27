@@ -12,7 +12,7 @@ enum BarLayer {
 }
 
 impl HerdrWindow {
-    fn compact_application_bar(&self, window: &Window) -> bool {
+    pub(super) fn compact_application_bar(&self, window: &Window) -> bool {
         // Reserve space for all three window buttons and their padding before
         // deciding whether the headings fit beside them.
         let controls = if crate::titlebar::show_controls(self.config.show_window_controls, window) {
@@ -283,25 +283,36 @@ impl HerdrWindow {
                 || SharedString::from(fl!("menus-menu")),
                 |menu| menu.name.clone(),
             ));
-        let bar = self.menu.application_bar.bar.get();
         let content = self.menu.application_bar.content.get();
+        let dedicated = self.config.show_menu_bar && !self.zen_layout();
         let compact = self.compact_application_bar(window);
-        let button = self
-            .menu
-            .application_bar
-            .buttons
-            .borrow()
-            .get(if compact {
-                0
-            } else {
-                menu.path.first().copied().unwrap_or(0)
-            })
-            .copied()
-            .unwrap_or(bar);
+        let anchor = if self.zen_layout() {
+            Bounds::new(content.origin, size(content.size.width, px(0.)))
+        } else if !self.config.show_menu_bar {
+            self.menu.application_bar.launcher.get()
+        } else {
+            let bar = self.menu.application_bar.bar.get();
+            let button = self
+                .menu
+                .application_bar
+                .buttons
+                .borrow()
+                .get(if compact {
+                    0
+                } else {
+                    menu.path.first().copied().unwrap_or(0)
+                })
+                .copied()
+                .unwrap_or(bar);
+            Bounds::new(
+                point(button.left(), bar.top()),
+                size(button.size.width, bar.size.height),
+            )
+        };
         let font = &self.config.ui;
         let theme = &self.theme;
         let width = px(380. * font.size / 12.).min((content.size.width - px(16.)).max(px(0.)));
-        let top = bar.bottom();
+        let top = anchor.bottom();
         let current = menu.current();
         let items = current.map(|menu| menu.items.clone()).unwrap_or_else(|| {
             menu.menus
@@ -465,11 +476,13 @@ impl HerdrWindow {
         // The overlay fills the same content root as the underlying bar. Lay out
         // this copy there too: using cached bounds would feed its stale geometry
         // back into the next frame after a resize or decoration inset change.
-        overlay = overlay.child(self.application_bar(BarLayer::Overlay, window, cx));
+        if dedicated {
+            overlay = overlay.child(self.application_bar(BarLayer::Overlay, window, cx));
+        }
         overlay.child(
             anchored()
                 .position(point(
-                    button
+                    anchor
                         .left()
                         .min((content.right() - width - px(8.)).max(content.left() + px(8.)))
                         .max(content.left() + px(8.)),
