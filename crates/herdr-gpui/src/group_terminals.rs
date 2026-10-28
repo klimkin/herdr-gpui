@@ -20,7 +20,7 @@ use crate::{
     connection::ConnectionBridge,
     presentation::{Picture, Presentation},
     state::{ConnectionStatus, LiveState},
-    terminal::{popup_origin, viewport},
+    terminal::{bottom_rows, popup_origin, viewport},
     terminal_painter::{Ground, ImageTarget, PlacedImages},
     window::reasserts,
 };
@@ -590,7 +590,8 @@ impl HerdrWindow {
             .min_w_0()
             .overflow_hidden()
             .bg(self.fill().base(self.terminal_theme().background))
-            .child(
+            .child(bottom_rows(
+                cell_height,
                 canvas(
                     move |bounds, _, cx| {
                         if place {
@@ -657,7 +658,7 @@ impl HerdrWindow {
                     },
                 )
                 .size_full(),
-            )
+            ))
             .into_any_element()
     }
 
