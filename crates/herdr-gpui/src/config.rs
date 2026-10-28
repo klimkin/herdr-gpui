@@ -273,6 +273,9 @@ pub struct Config {
     /// Draw minimize, maximize, and close buttons in the menu bar on Linux.
     /// When true the window needs no title bar from the window manager.
     pub show_window_controls: bool,
+    /// The strip at the window's foot naming the branch and pull request of a
+    /// development build made from a linked worktree. Off by default.
+    pub show_worktree_banner: bool,
     pub sidebar: FontConfig,
     /// Daemon sidebar rows, falling back to defaults when invalid.
     pub sidebar_layout: SidebarLayout,
@@ -449,6 +452,7 @@ impl Default for Config {
             show_sidebar_search: true,
             show_system_load: true,
             show_window_controls: cfg!(target_os = "linux"),
+            show_worktree_banner: false,
             sidebar: font(monospace, 12.0),
             sidebar_layout: SidebarLayout::default(),
             sidebar_style: SidebarStyle::default(),
@@ -531,6 +535,7 @@ struct Settings {
     show_sidebar_search: Option<bool>,
     show_system_load: Option<bool>,
     show_window_controls: Option<bool>,
+    show_worktree_banner: Option<bool>,
     sidebar: sidebar_style::SidebarSettings,
     smooth_scroll: Option<bool>,
     sound: SoundConfig,
@@ -878,6 +883,7 @@ impl Config {
         config.show_window_controls = settings
             .show_window_controls
             .unwrap_or(cfg!(target_os = "linux"));
+        config.show_worktree_banner = settings.show_worktree_banner.unwrap_or(false);
         config.smooth_scroll = settings.smooth_scroll.unwrap_or(true);
         // keep-sorted end
         config.status_bar = settings.status_bar;

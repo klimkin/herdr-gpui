@@ -166,7 +166,7 @@ impl HerdrWindow {
     /// The development build's worktree banner.
     pub(crate) fn render_worktree_banner(&self) -> Option<Div> {
         crate::worktree_banner::render(
-            env!("HERDR_BUILD_WORKTREE") == "1",
+            self.config.show_worktree_banner && env!("HERDR_BUILD_WORKTREE") == "1",
             env!("HERDR_BUILD_BRANCH"),
             env!("HERDR_BUILD_PR"),
         )
