@@ -9,6 +9,7 @@ use crate::{
 use std::sync::Arc;
 
 mod backdrop;
+mod bottom_rows;
 mod close_window;
 mod detach;
 mod padding;
