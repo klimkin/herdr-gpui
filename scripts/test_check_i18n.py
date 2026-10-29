@@ -204,6 +204,18 @@ class MigratedTests(unittest.TestCase):
             [f'{self.ROOT}:3: "Raw text" is not a message'],
         )
 
+    def test_stderr_diagnostics_are_allowed_but_stdout_is_checked(self) -> None:
+        source = (
+            "// i18n: migrated\n"
+            'eprint!("Could not open");\n'
+            'std::eprintln!("Could not save");\n'
+            'println!("Open file");\n'
+        )
+        self.assertEqual(
+            self.errors({self.ROOT: source}),
+            [f'{self.ROOT}:4: "Open file" is not a message'],
+        )
+
     def test_unicode_names(self) -> None:
         source = '// i18n: migrated\nlet café = 1;\nnaïve::größe!("Open file");\n'
         self.assertEqual(
