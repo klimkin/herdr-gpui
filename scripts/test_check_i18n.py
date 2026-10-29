@@ -125,7 +125,7 @@ class CheckTests(unittest.TestCase):
         }
         self.assertEqual(
             check_i18n.check(files, sources),
-            ['crates/app/src/menu/tests.rs: fl!("menu-gone") names no en-US message'],
+            [f'{Path("crates/app/src/menu/tests.rs")}: fl!("menu-gone") names no en-US message'],
         )
 
     def test_unused_and_unknown_messages_are_reported(self) -> None:
@@ -172,8 +172,8 @@ class MigratedTests(unittest.TestCase):
         self.assertEqual(
             self.errors(sources),
             [
-                'crates/app/src/menu/row.rs:1: "open the file" is not a message',
-                'crates/app/src/menu.rs:2: "Quit Herdr" is not a message',
+                f'{Path("crates/app/src/menu/row.rs")}:1: "open the file" is not a message',
+                f'{self.ROOT}:2: "Quit Herdr" is not a message',
             ],
         )
 
@@ -194,21 +194,21 @@ class MigratedTests(unittest.TestCase):
         )
         self.assertEqual(
             self.errors({self.ROOT: source}),
-            ['crates/app/src/menu.rs:15: "Open {name}" is not a message'],
+            [f'{self.ROOT}:15: "Open {{name}}" is not a message'],
         )
 
     def test_placeholders_and_raw_strings(self) -> None:
         source = '// i18n: migrated\nformat!("{Name} {count}");\nlet r = r#"Raw text"#;\n'
         self.assertEqual(
             self.errors({self.ROOT: source}),
-            ['crates/app/src/menu.rs:3: "Raw text" is not a message'],
+            [f'{self.ROOT}:3: "Raw text" is not a message'],
         )
 
     def test_unicode_names(self) -> None:
         source = '// i18n: migrated\nlet café = 1;\nnaïve::größe!("Open file");\n'
         self.assertEqual(
             self.errors({self.ROOT: source}),
-            ['crates/app/src/menu.rs:3: "Open file" is not a message'],
+            [f'{self.ROOT}:3: "Open file" is not a message'],
         )
 
 
