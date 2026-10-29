@@ -77,6 +77,8 @@ NOT_SHOWN = {
     "debug_selector",
     "ensure!",
     "env!",
+    "eprint!",
+    "eprintln!",
     "error!",
     "expect",
     "include_str!",
