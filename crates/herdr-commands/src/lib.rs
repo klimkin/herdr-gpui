@@ -356,12 +356,12 @@ pub const COMMANDS: &[CommandInfo] = &[
     CommandInfo {
         command: Command::RecentPane,
         name: "recent_pane",
-        label: "Recent Pane",
+        message: "commands-recent-pane",
     },
     CommandInfo {
         command: Command::RecentPaneReverse,
         name: "recent_pane_reverse",
-        label: "Recent Pane Reverse",
+        message: "commands-recent-pane-reverse",
     },
     CommandInfo {
         command: Command::Back,
