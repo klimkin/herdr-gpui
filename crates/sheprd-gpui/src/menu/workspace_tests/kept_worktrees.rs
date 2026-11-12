@@ -41,6 +41,9 @@ fn window<'a>(
         view.update(cx, |view, cx| {
             view.live.snapshot = None;
             view.live.missing_installation = true;
+            // This computer, which fan-out's host fence can name; the
+            // layout fixture's custom socket has no host.
+            view.endpoints[0].connection.target = sheprd_client::ConnectTarget::Local;
             view.core_terminals.seed_checkout_for_test(
                 folder,
                 linked.map(|linked| Identity {
@@ -112,12 +115,28 @@ fn the_new_worktree_dialog_reads_the_kept_folder(cx: &mut TestAppContext) {
             assert_eq!(view.kept_checkout().as_deref(), Some(LINKED));
             assert!(view.menu.worktree.is_some());
             assert!(view.menu.dispatch.is_none(), "no other host makes them");
-            // Read through Git's names, with no daemon to ask.
-            let input = view
-                .menu_target_input(&crate::pull_request::Origin::Local)
+            // Read through Git's names, with no daemon to ask. On this
+            // computer the lookup goes by the shared repository key, the
+            // same input the sidebar prefetch caches; another host keeps
+            // the checkout so a sibling checkout cannot borrow its answer.
+            // The fixture's POSIX paths are not absolute Windows paths.
+            #[cfg(unix)]
+            {
+                let local = view
+                    .menu_target_input(&crate::pull_request::Origin::Local)
+                    .unwrap();
+                assert_eq!(local.checkout, None);
+                assert_eq!(
+                    local.repo_key.as_deref(),
+                    Some(Path::new(MAIN).join(".git").to_str().unwrap())
+                );
+                assert_eq!(local.branch, "feature");
+            }
+            let remote = view
+                .menu_target_input(&crate::pull_request::Origin::Ssh("box".into()))
                 .unwrap();
-            assert_eq!(input.checkout.as_deref(), Some(LINKED));
-            assert_eq!(input.branch, "feature");
+            assert_eq!(remote.checkout.as_deref(), Some(LINKED));
+            assert_eq!(remote.branch, "feature");
         })
     });
 }
@@ -310,19 +329,21 @@ fn work_finishing_together_all_lands(cx: &mut TestAppContext) {
     });
 }
 
+/// Git runs on the host that keeps the workspace. A menu left open on this
+/// computer's workspace while the window moves to an SSH host offers no Git,
+/// so a folder here never reaches the other host's; a workspace that host
+/// keeps offers its worktree rows, run there.
 #[gpui::test]
 fn another_hosts_kept_workspace_runs_its_git_on_that_host(cx: &mut TestAppContext) {
-    let (view, cx, id) = window(cx, LINKED, Some(true));
-    cx.update(|window, cx| {
+    let (view, cx, here) = window(cx, LINKED, Some(true));
+    assert!(rows(&view, cx, &here).contains(&WorkspaceAction::NewWorktree));
+    let target = sheprd_client::ConnectTarget::Ssh {
+        target: "box".into(),
+        session: "work".into(),
+    };
+    let folder = "/home/me/app-feature";
+    let there = cx.update(|window, cx| {
         view.update(cx, |view, cx| {
-            view.open_workspace_menu(&id, gpui::Point::default(), window, cx);
-            // Shown as if kept on an SSH host: its folder is that host's, so
-            // the worktree rows are offered and their Git goes to that host,
-            // never to this computer.
-            let target = sheprd_client::ConnectTarget::Ssh {
-                target: "box".into(),
-                session: "work".into(),
-            };
             view.endpoints.push(crate::endpoint::Endpoint::new(
                 "ssh:box".into(),
                 "Box".into(),
@@ -330,23 +351,52 @@ fn another_hosts_kept_workspace_runs_its_git_on_that_host(cx: &mut TestAppContex
                 true,
             ));
             view.selected_endpoint = view.endpoints.len() - 1;
-            assert_eq!(view.kept_checkout().as_deref(), Some(LINKED));
-            assert!(
-                !sheprd_remote::work::host_for_kept(&target)
-                    .unwrap()
-                    .is_local()
-            );
-            let rows: Vec<_> = view
+            assert_eq!(view.kept_checkout(), None);
+            let offered: Vec<_> = view
                 .workspace_items()
                 .into_iter()
                 .map(|(action, _)| action)
                 .collect();
-            assert!(rows.contains(&WorkspaceMenuAction::Dialog(WorkspaceAction::NewWorktree)));
-            assert!(rows.contains(&WorkspaceMenuAction::Dialog(
+            assert!(!offered.contains(&WorkspaceMenuAction::Dialog(WorkspaceAction::NewWorktree)));
+            assert!(!offered.contains(&WorkspaceMenuAction::Dialog(
                 WorkspaceAction::DeleteWorktree
             )));
+            let scope = crate::browser::scope(&view.endpoints[view.selected_endpoint]);
+            view.core_terminals.set_remote_hub_for_test(
+                scope.clone(),
+                target.clone(),
+                crate::core_terminals::Hub::with_join(|_| {
+                    Err(crate::core_terminals::Error::NotBundled)
+                }),
+            );
+            view.core_terminals.seed_remote_checkout_for_test(
+                &scope,
+                folder,
+                Some(Identity {
+                    branch: Some("feature".into()),
+                    key: "/home/me/app/.git".into(),
+                    label: "app".into(),
+                    linked: true,
+                }),
+            );
+            view.dismiss_menu(window, cx);
+            let location =
+                Location::core_terminal(Panes::single(TerminalId::new("t2").unwrap()), false);
+            view.open_kept_workspace(None, Path::new(folder), location, window, cx)
+                .unwrap()
         })
     });
+    let offered = rows(&view, cx, &there);
+    assert!(offered.contains(&WorkspaceAction::NewWorktree));
+    assert!(offered.contains(&WorkspaceAction::DeleteWorktree));
+    view.read_with(cx, |view, _| {
+        assert_eq!(view.kept_checkout().as_deref(), Some(folder));
+    });
+    assert!(
+        !sheprd_remote::work::host_for_kept(&target)
+            .unwrap()
+            .is_local()
+    );
 }
 
 #[gpui::test]

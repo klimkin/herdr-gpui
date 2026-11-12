@@ -507,6 +507,13 @@ impl CoreTerminals {
         self.checkouts.seed(cwd, identity);
     }
 
+    /// The latest terminal waiting to start, as no core answers in tests.
+    #[cfg(all(test, feature = "cloud"))]
+    pub(crate) fn last_wanted_for_test(&self) -> Option<(&Purpose, &Spawn)> {
+        let (purpose, _, spawn, _) = self.wanted.back()?;
+        Some((purpose, spawn))
+    }
+
     /// Places `tab` in `workspace` of `scope`, as showing the workspace does.
     #[cfg(test)]
     pub(crate) fn place_for_test(&mut self, tab: TabId, scope: Scope, workspace: &str) {
@@ -652,9 +659,10 @@ impl SheprdWindow {
 
     /// Starts `spawn` in herdr-core for `purpose`, once the hub of its
     /// host's core connects, in the folder and with the Herdr variables of
-    /// where it opens.
-    pub(crate) fn start_core_program(&mut self, purpose: Purpose, spawn: Spawn, cx: &App) {
-        self.start_core_program_with(purpose, spawn, None, cx);
+    /// where it opens. False when it was dropped: the queue is full, or the
+    /// host has no core to ask.
+    pub(crate) fn start_core_program(&mut self, purpose: Purpose, spawn: Spawn, cx: &App) -> bool {
+        self.start_core_program_with(purpose, spawn, None, cx)
     }
 
     /// Starts `spawn` as [`Self::start_core_program`] does, handing `file`
@@ -666,14 +674,14 @@ impl SheprdWindow {
         mut spawn: Spawn,
         file: Option<tempfile::TempPath>,
         cx: &App,
-    ) {
+    ) -> bool {
         if self.core_terminals.wanted.len() >= MAX_WANTED {
             tracing::warn!("Too many herdr-core terminals waiting to start; dropped one");
-            return;
+            return false;
         }
         let host = self.purpose_host(&purpose);
         let Some(hub) = self.core_hub(&host) else {
-            return;
+            return false;
         };
         hub.connect(Start::IfMissing);
         self.give_core_context(&purpose, &host, &mut spawn, cx);
@@ -681,6 +689,7 @@ impl SheprdWindow {
             .wanted
             .push_back((purpose, host, spawn, file));
         self.start_core_shell();
+        true
     }
 
     /// The core a terminal started for `purpose` runs in, read once as it is
@@ -802,7 +811,10 @@ impl SheprdWindow {
         // against its folder, which this computer's core reports.
         let fallback = self.core_fallback_view();
         self.answer_phone_split(cx);
-        let listed = self.core_terminals.poll_infos(std::time::Instant::now());
+        let dispatching = self.dispatch_sampling();
+        let listed = self
+            .core_terminals
+            .poll_infos(std::time::Instant::now(), dispatching);
         self.adopt_labelled_terminals(listed, cx);
         if listed {
             self.hear_core_agents(cx);

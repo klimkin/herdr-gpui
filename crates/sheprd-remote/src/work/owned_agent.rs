@@ -9,8 +9,21 @@ use std::sync::atomic::AtomicBool;
 
 mod end;
 mod error;
-pub use end::{checkout_idle, end_verified};
+pub use end::{checkout_idle, end, end_verified};
 pub use error::{Error, Result};
+
+/// What a caller does with the terminal it inspects, which decides how much
+/// it must prove beyond the ownership label `run` attached atomically.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Purpose {
+    /// Type into it: the live foreground must still be the agent, never the
+    /// shell `--keep` leaves once it exits, nor anything typed there since.
+    Message,
+    /// End it, as cleanup and a confirmed restart do: a finished terminal, or
+    /// a live one whose agent exited into its kept shell at its prompt, is
+    /// still ours; another program started in that shell is not.
+    End,
+}
 
 /// A caller's namespace and durable operation identity, attached atomically.
 #[derive(Clone, Copy)]
@@ -59,10 +72,7 @@ pub fn start(
             cancelled,
         )?);
     }
-    let mut argv = agent.kind.start_argv(None);
-    if let Some(model) = agent.model.filter(|model| super::valid_model(model)) {
-        argv.extend(["--model".into(), model.into()]);
-    }
+    let argv = command(agent);
     let program = argv
         .iter()
         .map(|arg| shell_quote(arg))
@@ -98,20 +108,43 @@ pub fn recover(
     expected: Option<&str>,
     cancelled: &AtomicBool,
 ) -> Result<Started> {
+    inspect(
+        host,
+        tree,
+        owner,
+        agent,
+        expected,
+        Purpose::Message,
+        cancelled,
+    )
+}
+
+/// Inspect a retained terminal for `purpose`; an unknown state is never
+/// ownership proof.
+pub fn inspect(
+    host: &Host,
+    tree: &Worktree,
+    owner: Owner<'_>,
+    agent: &Agent<'_>,
+    expected: Option<&str>,
+    purpose: Purpose,
+    cancelled: &AtomicBool,
+) -> Result<Started> {
     owner.validate()?;
-    let output = host
-        .capture("core_cli ls --json\n", cancelled)
-        .map_err(script(Step::List))?;
+    let line = format!(
+        "core_cli ls --all --json --label {}\n",
+        shell_quote(&format!("{}={}", owner.key, owner.value))
+    );
+    let output = host.capture(&line, cancelled).map_err(script(Step::List))?;
     let list: List =
         serde_json::from_slice(output.trim_ascii()).map_err(|source| super::Error::Decode {
             step: Step::List,
             source,
         })?;
-    let mut argv = agent.kind.start_argv(None);
-    if let Some(model) = agent.model.filter(|model| super::valid_model(model)) {
-        argv.extend(["--model".into(), model.into()]);
-    }
-    select(list, &tree.path, owner, &argv, expected)
+    let argv = command(agent);
+    select(
+        list, &tree.path, owner, &argv, expected, purpose, agent.kind,
+    )
 }
 
 fn select(
@@ -120,6 +153,8 @@ fn select(
     owner: Owner<'_>,
     argv: &[String],
     expected: Option<&str>,
+    purpose: Purpose,
+    kind: crate::teleport::AgentKind,
 ) -> Result<Started> {
     let mut matches = list.terminals.into_iter().filter(|terminal| {
         terminal
@@ -129,9 +164,20 @@ fn select(
     });
     let terminal = matches.next().ok_or(Error::Uncertain)?;
     if matches.next().is_some()
-        || terminal.state != TerminalState::Live
+        || !(terminal.state == TerminalState::Live
+            || (purpose == Purpose::End && terminal.state == TerminalState::Finished))
         || terminal.cwd != path
         || terminal.argv != argv
+        // Messaging types into the agent, so it must still be in front.
+        // Ending may also find the shell `--keep` left at its prompt once
+        // the agent exited; a program started there since is the user's.
+        || (terminal.state == TerminalState::Live
+            && !terminal.foreground.as_ref().is_some_and(|foreground| {
+                crate::teleport::AgentKind::identify(None, &foreground.name, &foreground.argv)
+                    == Some(kind)
+                    || foreground.argv == argv
+                    || (purpose == Purpose::End && at_prompt(&foreground.name, &foreground.argv))
+            }))
         || expected.is_some_and(|expected| terminal.address != expected)
     {
         return Err(Error::Uncertain);
@@ -139,6 +185,27 @@ fn select(
     Ok(Started::Herdr2 {
         terminal: terminal.address,
     })
+}
+
+/// Whether a foreground process is a bare shell waiting at its prompt:
+/// a shell given only options, not a script or command to run.
+fn at_prompt(name: &str, argv: &[String]) -> bool {
+    match argv.split_first() {
+        Some((program, options)) => {
+            crate::teleport::is_shell(program)
+                && options.iter().all(|arg| arg.starts_with('-'))
+                && !options.iter().any(|arg| arg == "-c")
+        }
+        None => crate::teleport::is_shell(name),
+    }
+}
+
+fn command(agent: &Agent<'_>) -> Vec<String> {
+    let mut argv = agent.kind.start_argv(None);
+    if let Some(model) = agent.model.filter(|model| super::valid_model(model)) {
+        argv.extend(["--model".into(), model.into()]);
+    }
+    argv
 }
 
 #[cfg(test)]
