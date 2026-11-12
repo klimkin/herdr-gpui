@@ -1,12 +1,18 @@
 #!/bin/sh
-# Archives Herdr Remote and uploads it to TestFlight with an App Store
+# Archives Sheprd and uploads it to TestFlight with an App Store
 # Connect API key: Xcode signs automatically with the key (no certificates
 # or profiles in the repository) and uploads the export itself.
 #
 # Needs: APPLE_TEAM_ID, ASC_KEY_ID, ASC_ISSUER_ID, and ASC_KEY_P8 (the .p8
-# file's contents). BUILD_NUMBER defaults to one more than the highest
-# build App Store Connect has for the app (next-build.py). Without the key it
-# says so and exits 0, so CI passes before the secrets exist.
+# file's contents). In CI it also needs IOS_SIGNING_P12_BASE64 and
+# IOS_SIGNING_P12_PASSWORD, the certificate the archive signs with
+# (tools/signing.sh says why). Distribution needs no certificate here: the
+# export signs with the team's cloud-managed one. BUILD_NUMBER defaults to
+# one more than the highest build App Store Connect has for the app
+# (next-build.py). The build's "What to Test" lists the commits since the
+# last build (testflight_notes.py), so this needs the checkout's full
+# history. Without the key it says so and exits 0, so CI passes before the
+# secrets exist.
 set -eu
 cd "$(dirname "$0")/.."
 
@@ -15,16 +21,27 @@ if [ -z "${ASC_KEY_P8:-}" ] || [ -z "${ASC_KEY_ID:-}" ] || [ -z "${ASC_ISSUER_ID
     exit 0
 fi
 
+. tools/signing.sh
 work=$(mktemp -d)
-trap 'rm -rf "$work"' EXIT
+cleanup() {
+    signing_cleanup
+    rm -rf "$work"
+}
+trap cleanup EXIT
 key="$work/AuthKey.p8"
 umask 077
 printf '%s\n' "$ASC_KEY_P8" > "$key"
+signing_setup "$work"
+bundle_id=so.pen.herdr.remote
 if [ -z "${BUILD_NUMBER:-}" ]; then
     echo "Asking App Store Connect for the last build number…"
-    BUILD_NUMBER=$(python3 tools/next-build.py so.pen.herdr.remote)
+    BUILD_NUMBER=$(python3 tools/next-build.py "$bundle_id")
 fi
 build=$BUILD_NUMBER
+# Before the archive, so a problem here costs seconds, not an upload.
+echo "Writing the notes from the commits since the last build…"
+python3 tools/testflight_notes.py compose "$bundle_id" > "$work/notes.txt"
+cat "$work/notes.txt"
 auth="-allowProvisioningUpdates -authenticationKeyPath $key -authenticationKeyID $ASC_KEY_ID -authenticationKeyIssuerID $ASC_ISSUER_ID"
 
 cat > "$work/ExportOptions.plist" <<PLIST
@@ -41,10 +58,10 @@ PLIST
 
 echo "Generating the Xcode project…"
 xcodegen -q
-echo "Archiving Herdr Remote, build $build (several minutes; xcodebuild prints only errors)…"
+echo "Archiving Sheprd, build $build (several minutes; xcodebuild prints only errors)…"
 # shellcheck disable=SC2086
-xcodebuild archive -project HerdrRemote.xcodeproj -scheme HerdrRemote \
-    -destination 'generic/platform=iOS' -archivePath "$work/HerdrRemote.xcarchive" \
+xcodebuild archive -project SheprdRemote.xcodeproj -scheme SheprdRemote \
+    -destination 'generic/platform=iOS' -archivePath "$work/SheprdRemote.xcarchive" \
     DEVELOPMENT_TEAM="$APPLE_TEAM_ID" CURRENT_PROJECT_VERSION="$build" \
     $auth -quiet
 # The export re-signs with the distribution profile, which sets
@@ -54,7 +71,9 @@ echo "Archived. Signing for distribution and uploading to App Store Connect…"
 # first `rsync` on PATH; Homebrew's rejects the options Apple's passes
 # ("--extended-attributes: unknown option"), so the system PATH only.
 # shellcheck disable=SC2086
-PATH=/usr/bin:/bin:/usr/sbin:/sbin xcodebuild -exportArchive -archivePath "$work/HerdrRemote.xcarchive" \
+PATH=/usr/bin:/bin:/usr/sbin:/sbin xcodebuild -exportArchive -archivePath "$work/SheprdRemote.xcarchive" \
     -exportOptionsPlist "$work/ExportOptions.plist" -exportPath "$work/export" \
     $auth -quiet
-echo "Uploaded build $build. App Store Connect processes it for a few minutes before TestFlight offers it."
+echo "Uploaded build $build. Setting its notes once App Store Connect has it (up to 30 minutes)…"
+python3 tools/testflight_notes.py publish "$bundle_id" "$build" "$work/notes.txt"
+echo "Build $build has its notes. App Store Connect may still be processing it before TestFlight offers it."
