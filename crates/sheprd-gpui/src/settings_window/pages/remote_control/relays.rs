@@ -58,7 +58,7 @@ impl Standing {
                 .ok()
                 .and_then(|address| status.relays.get(&address))
         });
-        match reported {
+        match reported.map(|reported| &reported.state) {
             Some(RelayState::Listening) => Self::Listening,
             Some(RelayState::Connecting) => Self::Connecting,
             Some(RelayState::Failed { error }) => Self::Failed(error.clone()),
@@ -114,11 +114,10 @@ pub(in crate::settings_window) fn public_title(relay: &Public) -> String {
 impl SettingsWindow {
     /// Whether `address` is already in the list, however it is spelled.
     fn lists_relay(&self, address: &str) -> bool {
-        self.config
-            .remote
-            .relays
-            .iter()
-            .any(|relay| relay == address || relay_address(relay).is_ok_and(|it| it == address))
+        self.config.remote.relays.iter().any(|relay| {
+            relay.endpoint == address
+                || relay_address(&relay.endpoint).is_ok_and(|it| it == address)
+        })
     }
 
     fn save_with_relay(&mut self, address: String, cx: &mut Context<Self>) {
@@ -126,7 +125,7 @@ impl SettingsWindow {
             return;
         }
         let mut relays = self.config.remote.relays.clone();
-        relays.push(address);
+        relays.push(address.as_str().into());
         self.save_remote(Edit::Relays(relays), cx);
     }
 
@@ -243,8 +242,8 @@ impl SettingsWindow {
         let relays = &self.config.remote.relays;
         let idle = !self.busy();
         let rows = relays.iter().enumerate().map(|(index, relay)| {
-            let name = crate::notifications::safe_text(relay, 200);
-            let standing = Standing::of(relay, health);
+            let name = crate::notifications::safe_text(&relay.endpoint, 200);
+            let standing = Standing::of(&relay.endpoint, health);
             let remove = ui::button(
                 theme,
                 format!("remote-relay-{index}-remove"),

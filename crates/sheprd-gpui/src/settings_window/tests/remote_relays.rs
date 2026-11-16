@@ -24,12 +24,13 @@ const EXPIRES: u64 = 4_102_444_800;
 fn listening() -> Health {
     let mut status = status();
     status.relays = [
-        (HOME.to_owned(), RelayState::Listening),
+        (HOME.to_owned(), RelayState::Listening.into()),
         (
             AWAY.to_owned(),
             RelayState::Failed {
                 error: "the relay could not be reached".into(),
-            },
+            }
+            .into(),
         ),
     ]
     .into();
@@ -154,7 +155,7 @@ fn a_relay_row_says_how_the_daemon_stands_on_it() {
         "The daemon has not reported on it yet."
     );
     let mut connecting = status();
-    connecting.relays = [(HOME.to_owned(), RelayState::Connecting)].into();
+    connecting.relays = [(HOME.to_owned(), RelayState::Connecting.into())].into();
     assert_eq!(
         line(HOME, &Health::Running(connecting)),
         "Connecting\u{2026}"

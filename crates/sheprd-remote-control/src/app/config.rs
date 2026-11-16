@@ -318,7 +318,7 @@ pub enum Edit {
     Port(u16),
     Presence(bool),
     /// The whole list, as Settings shows it after adding or removing one.
-    Relays(Vec<String>),
+    Relays(Vec<Relay>),
 }
 
 impl Edit {
@@ -358,9 +358,30 @@ impl Edit {
                 let mut listed = toml_edit::Array::new();
                 let mut seen = Vec::new();
                 for relay in relays {
-                    let address = relay_address(&relay)?;
+                    let address = relay_address(&relay.endpoint)?;
+                    relay.label.check().map_err(|source| Error::RelayLabel {
+                        relay: relay.endpoint.clone(),
+                        source,
+                    })?;
                     if !seen.contains(&address) {
-                        listed.push(address.as_str());
+                        if relay.label.is_empty() {
+                            listed.push(address.as_str());
+                        } else {
+                            let mut table = toml_edit::InlineTable::new();
+                            table.insert("endpoint", address.as_str().into());
+                            if let Some(name) = relay.label.name {
+                                table.insert("name", name.into());
+                            }
+                            if let Some(description) = relay.label.description {
+                                table.insert("description", description.into());
+                            }
+                            if !relay.label.tags.is_empty() {
+                                let tags =
+                                    relay.label.tags.into_iter().collect::<toml_edit::Array>();
+                                table.insert("tags", tags.into());
+                            }
+                            listed.push(table);
+                        }
                         seen.push(address);
                     }
                 }
