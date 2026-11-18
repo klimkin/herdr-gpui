@@ -7,6 +7,7 @@ mod attach;
 mod claude;
 mod cli;
 mod codex;
+mod context;
 mod error;
 mod files;
 mod harness;
@@ -23,6 +24,7 @@ mod restore;
 mod rpc;
 mod session;
 mod session_helpers;
+mod t3;
 mod tui;
 
 use std::process::ExitCode;
@@ -56,6 +58,13 @@ fn main() -> ExitCode {
                 ExitCode::FAILURE
             }
         },
+        Ok(cli::Parsed::Restore(id)) => match restore::core::run(id) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(error) => {
+                eprintln!("sheprd-acp: {error:#}");
+                ExitCode::FAILURE
+            }
+        },
         Ok(cli::Parsed::Session(command)) => {
             let discover = matches!(command, session_helpers::Command::Discover { .. });
             match session_helpers::run(command) {
@@ -67,6 +76,13 @@ fn main() -> ExitCode {
             }
         }
         Ok(cli::Parsed::Mirror(options)) => match mirror::run(options) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(error) => {
+                eprintln!("sheprd-acp: {error:#}");
+                ExitCode::FAILURE
+            }
+        },
+        Ok(cli::Parsed::T3(options)) => match t3::run(options) {
             Ok(()) => ExitCode::SUCCESS,
             Err(error) => {
                 eprintln!("sheprd-acp: {error:#}");

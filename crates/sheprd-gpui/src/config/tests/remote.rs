@@ -137,6 +137,12 @@ fn remote_edits_write_what_loading_reads() -> anyhow::Result<()> {
         Edit::LiveActivities(ActivityDetail::Generic),
         Edit::DeviceIdleDays(90),
         Edit::Presence(true),
+        // Written as the daemon names them, each once.
+        Edit::Relays(vec![
+            " https://relay.example.org/ ".into(),
+            "https://relay.example.org".into(),
+            "https://eu.example.org/relay".into(),
+        ]),
     ] {
         Config::save_preference_path(Preference::Remote(edit), &path)?;
     }
@@ -149,12 +155,25 @@ fn remote_edits_write_what_loading_reads() -> anyhow::Result<()> {
             device_idle_days: 90,
             enabled: true,
             github_cli: false,
+            github_hosts: Vec::new(),
             keep_running: false,
             live_activities: ActivityDetail::Generic,
             notifications: Privacy::Excerpt,
             port: 9443,
             presence: true,
+            relays: vec![
+                "https://relay.example.org".into(),
+                "https://eu.example.org/relay".into(),
+            ],
         }
+    );
+    // Removing the last relay leaves an empty list, not a stale one.
+    Config::save_preference_path(Preference::Remote(Edit::Relays(Vec::new())), &path)?;
+    assert!(
+        Config::parse(&fs::read_to_string(&path)?)?
+            .remote
+            .relays
+            .is_empty()
     );
     Config::save_preference_path(
         Preference::Remote(Edit::Certificate(Certificate::Own)),
@@ -181,6 +200,12 @@ fn invalid_remote_edits_leave_the_file_alone() -> anyhow::Result<()> {
             cert: "relative.pem".into(),
             key: absolute("key.pem"),
         }),
+        Edit::Relays(vec![
+            "https://relay.example.org".into(),
+            "not a relay".into(),
+        ]),
+        // Plain HTTP is for a relay on this computer or network only.
+        Edit::Relays(vec!["http://relay.example.org".into()]),
     ] {
         assert!(Config::save_preference_path(Preference::Remote(edit), &path).is_err());
     }

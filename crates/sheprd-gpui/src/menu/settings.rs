@@ -398,11 +398,13 @@ impl SheprdWindow {
                 | Command::ToggleStatusBar
                 | Command::ToggleMenuBar
                 | Command::ToggleModPanel
+                | Command::ToggleAllHosts
                 | Command::FocusNextRegion
                 | Command::FocusPreviousRegion
                 | Command::ToggleZenMode
                 | Command::DevicesOverview
                 | Command::NotificationHistory
+                | Command::ClearAllNotifications
                 | Command::NewCoreTerminal
                 | Command::MirrorCorePane
                 | Command::ConvertToChat

@@ -10,12 +10,17 @@ struct SettingsView: View {
     @State private var cacheSize = 0
     @State private var forgetting: Computer?
     @State private var editMode = EditMode.inactive
+    #if DEBUG
+    @State private var showingRelays = false
+    @State private var showingGitHub = false
+    #endif
     @AppStorage(AppLock.setting, store: AppLock.store) private var requireFaceID = false
     @AppStorage(AppAppearance.key) private var appearance = AppAppearance.system
     @AppStorage(VoiceSettings.speaksKey) private var voiceSpeaks = true
     @AppStorage(VoiceSettings.confirmsKey) private var voiceConfirms = false
     @AppStorage(VoiceSettings.languageKey) private var voicePhoneLanguage = false
     @AppStorage(ActivityTokens.genericSetting) private var genericActivities = false
+    @AppStorage(RowLines.key) private var rowLines = RowLines.choices.lowerBound
 
     var body: some View {
         List {
@@ -59,12 +64,35 @@ struct SettingsView: View {
                     Text("Over Bluetooth, this phone tells the computer when you are near it, and the computer holds phone alerts while you are there and using it. It also keeps the computer's addresses current. The computer needs presence on in Sheprd's Remote control settings.")
                 }
             }
-            Section("Chats") {
+            Section {
+                NavigationLink {
+                    RelaysView()
+                } label: {
+                    LabeledContent("Relays", value: "\(model.savedRelays.relays.count)")
+                }
+            } header: {
+                Text("Connection")
+            } footer: {
+                Text("A relay joins this \(UIDevice.current.model) to a computer when they are on different networks.")
+            }
+            Section {
+                GitHubSettingsRow()
+            } footer: {
+                Text("This \(UIDevice.current.model) reads pull requests and checks from GitHub with its own sign-in, or one a computer lends.")
+            }
+            Section {
+                Picker("Lines per Row", selection: $rowLines) {
+                    ForEach(RowLines.choices, id: \.self) { Text($0, format: .number).tag($0) }
+                }
                 NavigationLink {
                     TextShortcutsView()
                 } label: {
                     LabeledContent("Text Shortcuts", value: "\(model.shortcuts.shortcuts.count)")
                 }
+            } header: {
+                Text("Chats")
+            } footer: {
+                Text("Lines per Row is how much of a chat's latest reply or summary its row shows in the lists.")
             }
             Section {
                 Toggle("Speak Results", isOn: $voiceSpeaks)
@@ -153,6 +181,10 @@ struct SettingsView: View {
         .environment(\.editMode, $editMode)
         #if DEBUG
         .task { if UserDefaults.standard.bool(forKey: "editComputers") { editMode = .active } }
+        .navigationDestination(isPresented: $showingRelays) { RelaysView() }
+        .task { if UserDefaults.standard.bool(forKey: "openRelays") { showingRelays = true } }
+        .navigationDestination(isPresented: $showingGitHub) { GitHubSettingsView() }
+        .task { if UserDefaults.standard.bool(forKey: "openGitHub") { showingGitHub = true } }
         #endif
     }
 }
@@ -172,9 +204,11 @@ private struct ComputerRow: View {
             } else if status == .outdated || machine?.needsUpdate == true {
                 ComputerStatusLine(status: .outdated).font(.caption)
             } else if let vouching = model.vouching(computer) {
-                Text("via \(model.displayName(vouching))").font(.caption).foregroundStyle(.secondary)
-            } else if let kind = computer.origins.lazy.map(OriginKind.init(origin:)).first(where: { $0 != .loopback }) {
-                Text(kind.label).font(.caption).foregroundStyle(.secondary)
+                let via = "via \(model.displayName(vouching))"
+                Text(computer.relay == nil ? via : "\(via) · \(Computer.relayLabel)")
+                    .font(.caption).foregroundStyle(.secondary)
+            } else if let label = computer.reachLabel {
+                Text(label).font(.caption).foregroundStyle(.secondary)
             }
         }
     }

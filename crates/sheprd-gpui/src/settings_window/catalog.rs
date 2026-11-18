@@ -471,6 +471,12 @@ pub(super) const CATALOG: &[Entry] = &[
     ),
     entry(
         Section::Chat,
+        "chat-auto-convert",
+        "settings-chat-auto-convert",
+        "settings-chat-auto-convert-description",
+    ),
+    entry(
+        Section::Chat,
         "chat-glide",
         "settings-chat-glide",
         "settings-chat-glide-description",

@@ -14,6 +14,7 @@ mod live;
 #[cfg(unix)]
 mod live_bridge;
 mod send;
+mod stream;
 
 use crate::frame::{Decoder, Frame, Kind, encode};
 use serde_json::{Value, json};
@@ -123,6 +124,12 @@ impl MockCore {
         self.socket
             .write_all(&encode(channel, kind, payload).unwrap())
             .unwrap();
+    }
+
+    /// Hangs up once everything sent is in the socket. On Windows a pipe
+    /// write may still be in flight, and dropping it then cancels it.
+    pub(crate) fn close(mut self) {
+        self.socket.flush().unwrap();
     }
 
     pub(crate) fn answer(&mut self, request: &Value, result: Value) {

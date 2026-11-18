@@ -4,6 +4,7 @@ use crate::protocol::{Call, Caller, Request, Response};
 use sheprd_remote_control::control::DeviceId;
 
 mod addresses;
+mod relay_token;
 
 #[test]
 fn remote_requests_have_a_stable_wire_form() {
@@ -74,6 +75,8 @@ fn remote_replies_round_trip() {
                 chats: 2,
                 devices: 1,
                 connected: 1,
+                github_asks: 0,
+                relays: Default::default(),
             })),
             error: None,
         },
@@ -87,6 +90,7 @@ fn remote_replies_round_trip() {
                 connected: false,
                 via: None,
                 hosts: Vec::new(),
+                share_github: true,
             }],
         },
     ] {

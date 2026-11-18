@@ -12,6 +12,7 @@ fn device(id: &str, name: &str) -> Device {
         connected: false,
         via: None,
         hosts: Vec::new(),
+        share_github: true,
     }
 }
 
@@ -66,5 +67,25 @@ fn a_daemon_answer_becomes_devices_or_a_failure() {
     assert_eq!(
         code(&devices(Err(sheprd_remote_control::control::Error::NoAnswer)).unwrap_err()),
         Some(ErrorCode::Failed)
+    );
+}
+
+#[test]
+fn a_relay_is_named_as_the_daemon_keys_it() {
+    assert_eq!(
+        normalized(" relay.example.org ").unwrap(),
+        "https://relay.example.org"
+    );
+    assert_eq!(
+        normalized("https://relay.example.org/").unwrap(),
+        "https://relay.example.org"
+    );
+    assert_eq!(
+        code(&normalized("").unwrap_err()),
+        Some(ErrorCode::InvalidRequest)
+    );
+    assert_eq!(
+        code(&normalized("ftp://relay.example.org").unwrap_err()),
+        Some(ErrorCode::InvalidRequest)
     );
 }

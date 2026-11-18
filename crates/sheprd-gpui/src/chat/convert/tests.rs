@@ -59,3 +59,21 @@ fn a_folder_no_remote_line_can_carry_is_refused() {
         ));
     }
 }
+
+#[test]
+fn typing_before_the_move_acts_stops_it() {
+    let stage = Stage::default();
+    assert!(stage.typed());
+    assert!(matches!(
+        committed(&stage),
+        Err(Error::Convert(convert::Error::Stopped))
+    ));
+}
+
+#[test]
+fn a_move_that_acted_finishes_after_typing() {
+    let stage = Stage::default();
+    assert!(committed(&stage).is_ok());
+    assert!(!stage.typed());
+    assert!(committed(&stage).is_ok(), "later keys, then the line");
+}

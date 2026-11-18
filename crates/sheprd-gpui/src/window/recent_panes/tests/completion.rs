@@ -26,7 +26,7 @@ fn complete_after_release(cx: &mut TestAppContext, ack_first: bool) {
         assert_eq!(
             view.recent_panes
                 .peek(Step::Back, &view.projections(), Some(&key(LOCAL, "d"))),
-            Some((0, key(LOCAL, "c")))
+            None
         );
     });
 
@@ -98,25 +98,27 @@ fn coalesced_completion_and_unrelated_focus_win_on_release(cx: &mut TestAppConte
 }
 
 #[gpui::test]
-fn legacy_stale_focus_after_release_cannot_reorder_the_final_choice(cx: &mut TestAppContext) {
-    let mut peer = MockPeer::advertising(&["pane.focus"]);
+fn paced_repeated_fenced_destinations_keep_the_original_toggle(cx: &mut TestAppContext) {
+    let mut peer = fenced();
     let (view, cx) = connected(cx, &peer, Keymap::default());
+    arrive(&view, cx, showing(&["a", "b", "c"], "c"));
     cx.simulate_modifiers_change(Modifiers::control());
-    cx.simulate_keystrokes("ctrl-tab ctrl-tab");
-    land(&view, cx, "d");
-    cx.simulate_modifiers_change(Modifiers::none());
-    land(&view, cx, "c");
-    view.read_with(cx, |view, _| {
-        assert_eq!(
-            view.recent_panes
-                .peek(Step::Back, &view.projections(), Some(&key(LOCAL, "c"))),
-            Some((0, key(LOCAL, "b")))
+    for (revision, pane) in [(8, "b"), (9, "a"), (10, "c"), (11, "b")] {
+        cx.simulate_keystrokes("ctrl-tab");
+        let mut target = showing(&["a", "b", "c"], pane);
+        target.revision = revision;
+        let (ack, focused) = barrier_response(&mut peer, &view, cx, revision);
+        assert_eq!(focused, [pane]);
+        let frame = surface_event(&view, cx, &target);
+        publish(
+            &view,
+            cx,
+            [ack, ClientEvent::Snapshot(Arc::new(target)), frame],
         );
-    });
-    land(&view, cx, "b");
+    }
+    cx.simulate_modifiers_change(Modifiers::none());
     tap(cx, Modifiers::control(), "ctrl-tab");
-
-    assert_eq!(focus_requests(&mut peer), ["c", "b", "d"]);
+    assert_eq!(focus_requests(&mut peer), ["c"]);
 }
 
 #[gpui::test]

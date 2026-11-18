@@ -4,6 +4,8 @@ pub type Result<T, E = Error> = std::result::Result<T, E>;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    #[error("the agent ended unexpectedly")]
+    AgentEnded,
     #[error("the agent's {0} pipe was not available")]
     AgentPipe(&'static str),
     #[error("could not start the agent `{program}`")]
@@ -42,6 +44,10 @@ pub enum Error {
     NoEndpointDir,
     #[error(transparent)]
     Observe(#[from] crate::observe::Error),
+    #[error("could not hold the chat's automatic recovery while it switches agents")]
+    RecoveryHold(#[source] sheprd_core_client::Error),
     #[error(transparent)]
     SessionHelpers(#[from] crate::session_helpers::Error),
+    #[error("could not read the chat's terminal input")]
+    TerminalInput(#[source] io::Error),
 }

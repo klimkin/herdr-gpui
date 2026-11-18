@@ -244,7 +244,7 @@ impl SheprdWindow {
         });
         match result {
             Ok(delivery) => {
-                self.note_input();
+                self.note_typing();
                 Some(delivery)
             }
             Err(error) => {

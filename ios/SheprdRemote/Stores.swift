@@ -1,5 +1,6 @@
 import Foundation
 import SheprdRemoteCore
+import SheprdTerminal
 import Observation
 
 /// Which computer and pane a view is about.
@@ -23,17 +24,33 @@ final class ChatStore {
     private(set) var diverged = false
     /// Prompts this phone sent that the transcript does not show yet.
     private(set) var outgoing: [Outgoing] = []
+    /// The message effects of this chat: a transcript from the cache or a
+    /// snapshot only notes them, and live changes play the new ones.
+    let effects = ChatEffectsModel()
 
     init(key: PaneKey, cached: Cache.CachedChat?) {
         self.key = key
         transcript = cached?.transcript
         cursor = cached?.cursor
+        if let transcript { effects.history(transcript) }
     }
+
+    #if DEBUG
+    /// A chat no computer sends, current as it is (`-sampleChat YES`).
+    init(key: PaneKey, sample: Transcript) {
+        self.key = key
+        transcript = sample
+        connected = true
+        stale = false
+        effects.history(sample)
+    }
+    #endif
 
     func apply(_ event: LiveEvent) {
         switch event {
         case let .chatSnapshot(snapshot):
             transcript = snapshot.transcript
+            effects.history(snapshot.transcript)
             cursor = snapshot.cursor
             connected = snapshot.connected
             stale = false
@@ -55,6 +72,7 @@ final class ChatStore {
                 cursor = item.cursor
             }
             transcript = current
+            effects.live(current, changed: changes.compactMap(\.change.entry))
         case let .chatConnection(_, connected):
             self.connected = connected
         default:
@@ -194,19 +212,27 @@ final class TermStore {
     }
 }
 
-/// The computers collapsed in the Workspaces tab, kept on this phone and
-/// shared by its windows.
+/// The computers collapsed in the Workspaces tab and the sections
+/// collapsed on Home, kept on this phone and shared by its windows.
 @MainActor
 @Observable
 final class CollapsedStore {
     private static let key = "collapsedComputers"
 
+    private static let homeKey = "collapsedHomeSections"
+
     var computers: CollapsedComputers {
         didSet { UserDefaults.standard.set(computers.devices.sorted(), forKey: Self.key) }
     }
 
+    /// Home's sections fold as computers do, by `ChatList.key(_:sort:)`.
+    var home: CollapsedComputers {
+        didSet { UserDefaults.standard.set(home.devices.sorted(), forKey: Self.homeKey) }
+    }
+
     init() {
         computers = CollapsedComputers(UserDefaults.standard.stringArray(forKey: Self.key) ?? [])
+        home = CollapsedComputers(UserDefaults.standard.stringArray(forKey: Self.homeKey) ?? [])
     }
 }
 
@@ -236,20 +262,39 @@ final class TermKeyStore {
     }
 }
 
-/// The tag the Workspaces tab shows computers of, kept on this phone and
-/// shared by its windows. Read it through `ComputerTags.active`: the tag may
-/// have left every computer since.
+/// The tag and computer Home, the iPad sidebar, and Workspaces show agents
+/// and workspaces of (`AgentFilterMenu`, `TagFilterMenu`), kept on this
+/// phone and shared by its windows. Read them through `ComputerTags.active`
+/// or `shown`: the tag may have left every computer since, and the computer
+/// been forgotten.
 @MainActor
 @Observable
 final class TagFilterStore {
     private static let key = "computerTagFilter"
+    private static let deviceKey = "computerDeviceFilter"
 
     var tag: String? {
         didSet { UserDefaults.standard.set(tag, forKey: Self.key) }
     }
 
+    var device: String? {
+        didSet { UserDefaults.standard.set(device, forKey: Self.deviceKey) }
+    }
+
     init() {
         tag = UserDefaults.standard.string(forKey: Self.key)
+        device = UserDefaults.standard.string(forKey: Self.deviceKey)
+    }
+
+    /// Filters by `tag`, dropping a chosen computer that lacks it.
+    func choose(tag: String?, among computers: [Computer]) {
+        self.tag = tag
+        if ComputerTags.active(device: device, tag: tag, among: computers) == nil { device = nil }
+    }
+
+    /// The devices the filter leaves among `computers`.
+    func shown(among computers: [Computer]) -> Set<String> {
+        ComputerTags.shown(tag: tag, device: device, among: computers)
     }
 }
 

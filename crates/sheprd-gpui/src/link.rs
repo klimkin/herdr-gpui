@@ -7,16 +7,21 @@
 //!
 //! - `sheprd://open?path=PATH`: a local checkout or worktree to show;
 //! - `sheprd://device?id=ID`: a device (host) to switch to;
-//! - `sheprd://notification?tag=TAG`: the notification that was clicked.
+//! - `sheprd://notification?tag=TAG`: the notification that was clicked;
+//! - `sheprd://relay?endpoint=ENDPOINT&token=TOKEN`: a private relay and its
+//!   listen token, from sheprd.org/relay once it deployed one, offered in
+//!   Settings for the user to add.
 //!
 //! Nothing else: no other parts, no unknown or repeated parameters, bounded
 //! lengths, and no control characters. A link names something to show; it
-//! never carries a command, and the app never runs one because of it.
+//! never carries a command, and the app never runs one because of it. A
+//! relay is only added once the user clicks Add.
 
 pub(crate) mod follow;
 #[cfg(test)]
 mod tests;
 
+use crate::remote::relay_token::ListenToken;
 use std::path::{Path, PathBuf};
 use url::Url;
 
@@ -27,12 +32,24 @@ const MAX_LINK: usize = 4096;
 const MAX_PATH: usize = 1024;
 const MAX_DEVICE: usize = 256;
 const MAX_TAG: usize = 512;
+const MAX_ENDPOINT: usize = 512;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum Link {
-    Open { path: PathBuf },
-    Device { id: String },
-    Notification { tag: String },
+    Open {
+        path: PathBuf,
+    },
+    Device {
+        id: String,
+    },
+    Notification {
+        tag: String,
+    },
+    /// `relay` as `[remote] relays` would keep it.
+    Relay {
+        relay: String,
+        token: ListenToken,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
@@ -59,6 +76,10 @@ pub(crate) enum Error {
     Device,
     #[error("the link's notification is not one this app posts")]
     Tag,
+    #[error("the link's relay is not a relay address")]
+    Relay,
+    #[error("the link's listen token is not one")]
+    Token,
 }
 
 /// Whether a command-line argument is a link rather than an option, so a
@@ -90,7 +111,7 @@ impl Link {
             return Err(Error::UnexpectedPart);
         }
         let action = url.host_str().unwrap_or_default();
-        if !matches!(action, "open" | "device" | "notification") {
+        if !matches!(action, "open" | "device" | "notification" | "relay") {
             return Err(Error::UnknownAction(crate::notifications::safe_text(
                 action, 64,
             )));
@@ -126,6 +147,18 @@ impl Link {
                 }
                 Ok(Self::Notification { tag })
             }
+            "relay" => {
+                parameters.only(&["endpoint", "token"])?;
+                let endpoint = parameters.take("endpoint")?;
+                if endpoint.len() > MAX_ENDPOINT {
+                    return Err(Error::Relay);
+                }
+                let relay =
+                    crate::config::remote::relay_address(&endpoint).map_err(|_| Error::Relay)?;
+                let token =
+                    ListenToken::parse(&parameters.take("token")?).map_err(|_| Error::Token)?;
+                Ok(Self::Relay { relay, token })
+            }
             other => Err(Error::UnknownAction(crate::notifications::safe_text(
                 other, 64,
             ))),
@@ -134,14 +167,27 @@ impl Link {
 
     /// The link as text, which [`Link::parse`] reads back to the same link.
     pub(crate) fn to_url(&self) -> String {
-        let (action, key, value) = match self {
-            Self::Open { path } => ("open", "path", path.to_string_lossy()),
-            Self::Device { id } => ("device", "id", id.as_str().into()),
-            Self::Notification { tag } => ("notification", "tag", tag.as_str().into()),
+        let mut query = url::form_urlencoded::Serializer::new(String::new());
+        let action = match self {
+            Self::Open { path } => {
+                query.append_pair("path", &path.to_string_lossy());
+                "open"
+            }
+            Self::Device { id } => {
+                query.append_pair("id", id);
+                "device"
+            }
+            Self::Notification { tag } => {
+                query.append_pair("tag", tag);
+                "notification"
+            }
+            Self::Relay { relay, token } => {
+                query.append_pair("endpoint", relay);
+                query.append_pair("token", token.expose());
+                "relay"
+            }
         };
-        let query: String = url::form_urlencoded::Serializer::new(String::new())
-            .append_pair(key, &value)
-            .finish();
+        let query = query.finish();
         format!("{SCHEME}://{action}?{query}")
     }
 }
@@ -150,11 +196,11 @@ impl Link {
 #[derive(Default)]
 struct Parameters(Vec<(&'static str, String)>);
 
-const KEYS: [&str; 3] = ["id", "path", "tag"];
+const KEYS: &[&str] = &["endpoint", "id", "path", "tag", "token"];
 
 impl Parameters {
     fn add(&mut self, key: &str, value: String) -> Result<(), Error> {
-        let Some(key) = KEYS.into_iter().find(|known| *known == key) else {
+        let Some(key) = KEYS.iter().copied().find(|known| *known == key) else {
             return Err(Error::UnknownParameter(crate::notifications::safe_text(
                 key, 64,
             )));

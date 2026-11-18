@@ -1,15 +1,18 @@
-//! `remote status`, `remote devices`, `remote pair`, `remote revoke`, and
-//! `remote restart`.
+//! `remote status`, `remote devices`, `remote pair`, `remote revoke`,
+//! `remote restart`, and `remote relays token`.
 //! The daemon is asked on the background executor. Pairing and revoking
 //! open the window's own dialogs, where the user approves a device or
-//! confirms the revoke; neither happens from here.
+//! confirms the revoke; neither happens from here. A listen token is the
+//! user's own, piped by them, so it is kept without asking, and never
+//! answered back or logged.
 use super::{Watches, in_free_window, settings::answer_when_done, socket, window_for};
 use crate::{
     control::protocol::{
         Call, ErrorCode, Response,
         remote::{RemoteOp, Reply},
     },
-    remote::Supervisor,
+    relay_sharing::RelaySharing,
+    remote::{Supervisor, relay_token},
 };
 use gpui::App;
 use sheprd_remote_control::control::{Device, Request};
@@ -45,6 +48,14 @@ pub(super) fn serve(
                 )
             }
         }));
+    }
+    // A token may be kept before remote control is on or the relay is in
+    // `[remote] relays`: the daemon reads it when it next listens there.
+    if let RemoteOp::RelayToken { relay, token } = op {
+        return match keep_token(&relay, token, cx) {
+            Ok(task) => answer_when_done(task, wait, incoming, watches, cx),
+            Err(response) => incoming.respond(response),
+        };
     }
     if !enabled && op != RemoteOp::Status {
         return incoming.respond(Response::error(ErrorCode::Failed, OFF));
@@ -124,9 +135,43 @@ pub(super) fn serve(
                 })
             })
         }
-        RemoteOp::Pair { .. } | RemoteOp::Restart => return,
+        RemoteOp::Pair { .. } | RemoteOp::Restart | RemoteOp::RelayToken { .. } => return,
     };
     answer_when_done(task, wait, incoming, watches, cx);
+}
+
+/// Keeps or forgets this computer's listen token for `relay` off the UI
+/// thread, then has the user's other machines offered it again.
+fn keep_token(
+    relay: &str,
+    token: Option<relay_token::ListenToken>,
+    cx: &mut App,
+) -> Result<gpui::Task<Response>, Response> {
+    let relay = normalized(relay)?;
+    let kept = token.is_some();
+    let save = cx.background_executor().spawn({
+        let relay = relay.clone();
+        async move { relay_token::save(&relay, token) }
+    });
+    Ok(cx.spawn(async move |cx| match save.await {
+        Ok(()) => {
+            cx.update(RelaySharing::tokens_changed);
+            Response::Remote {
+                reply: Reply::RelayToken { relay, token: kept },
+            }
+        }
+        Err(error) => Response::error(
+            ErrorCode::Failed,
+            format!("Could not keep the listen token for {relay}: {error}"),
+        ),
+    }))
+}
+
+/// `relay` as the daemon keys its tokens, or why it is no relay address.
+pub(super) fn normalized(relay: &str) -> Result<String, Response> {
+    sheprd_relay::Endpoint::parse(relay)
+        .map(|endpoint| endpoint.to_string())
+        .map_err(|_| Response::error(ErrorCode::InvalidRequest, "Not a relay address"))
 }
 
 /// Starts the restart; its outcome shows in Settings like any service

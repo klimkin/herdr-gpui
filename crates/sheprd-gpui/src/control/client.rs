@@ -311,6 +311,10 @@ pub(crate) fn send_notes(text: String) -> crate::Result<super::NotesTo> {
 pub(crate) fn status(error: &crate::Error) -> u8 {
     match error {
         crate::Error::InvalidBrowserUrl | crate::Error::InvalidLocalPage => exit::USAGE,
+        // A token that could not be read is a failure; one that is not there
+        // or not a token is the caller's to fix.
+        crate::Error::ListenToken(crate::control::listen_token::Error::Read(_)) => exit::REFUSED,
+        crate::Error::ListenToken(_) => exit::USAGE,
         crate::Error::Control(crate::control::Error::Unavailable { .. }) => exit::NOT_RUNNING,
         crate::Error::Control(crate::control::Error::Rejected { code, .. }) => match code {
             ErrorCode::InvalidUrl => exit::USAGE,
@@ -463,6 +467,7 @@ pub(crate) fn run(invocation: Invocation) -> ExitCode {
         ControlCommand::Chat(command) => chat::chat(command, &context),
         ControlCommand::Px0 => tabs::px0(&context),
         ControlCommand::Notes(command) => work::notes(command, &context),
+        ControlCommand::Memory(command) => work::memory(command, &context),
         ControlCommand::Worktree(command) => work::worktree(command, &context),
         ControlCommand::Feedback { wait } => browser::feedback(wait, &context),
         ControlCommand::Checkpoint(command) => work::checkpoint(command, &context),
@@ -479,6 +484,7 @@ pub(crate) fn run(invocation: Invocation) -> ExitCode {
             local::processes(pane.as_deref(), terminal.as_deref())
         }
         ControlCommand::Usage => hosts::usage(&context),
+        ControlCommand::UsagePick => hosts::usage_pick(&context),
         ControlCommand::System => hosts::system(&context),
         ControlCommand::Security(command) => hosts::security(command, &context),
         ControlCommand::Automation(command) => hosts::automation(command, &context),

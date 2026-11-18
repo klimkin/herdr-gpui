@@ -18,6 +18,8 @@ fn status(connected: usize) -> Status {
         chats: 0,
         devices: 2,
         connected,
+        relays: Default::default(),
+        github_asks: 0,
     }
 }
 
@@ -31,6 +33,7 @@ fn phone(id: &str, name: &str, connected: bool) -> Device {
         connected,
         via: None,
         hosts: Vec::new(),
+        share_github: true,
     }
 }
 
@@ -109,3 +112,5 @@ fn no_phone_shows_while_remote_control_is_off(cx: &mut TestAppContext) {
     draw(cx);
     assert!(cx.debug_bounds("titlebar-remote").is_none());
 }
+
+mod firewall;

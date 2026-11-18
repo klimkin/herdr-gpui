@@ -110,6 +110,7 @@ impl Localize for Error {
                 fl!("error-link-on-another-host", host = host.as_str())
             }
             Self::ListeningPorts(error) => error.localize(),
+            Self::ListenToken(error) => error.localize(),
             Self::LocalAddresses(source) => {
                 fl!("error-local-addresses", error = source.to_string())
             }
@@ -156,6 +157,7 @@ impl Localize for Error {
             Self::PortForward(error) => error.localize(),
             Self::PreferencesPath => fl!("error-preferences-path"),
             Self::Processes(error) => error.localize(),
+            Self::PublicRelays(error) => error.localize(),
             Self::Px0(error) => error.localize(),
             Self::RelativeConfigRoot => fl!("error-relative-config-root"),
             Self::Remote(error) => error.localize(),

@@ -2,11 +2,13 @@ use super::*;
 mod fanout;
 mod owned_cleanup;
 use sheprd_client::ConnectTarget;
-use std::{fs, os::unix::fs::PermissionsExt, path::PathBuf, process::Command};
+use std::{fs, path::PathBuf, process::Command};
 
 mod deadline;
 mod host_paths;
 mod uncertain_start;
+
+mod reuse;
 
 fn git(dir: &Path, args: &[&str]) -> String {
     let output = Command::new("git")
@@ -77,8 +79,7 @@ impl Fixture {
             "#!/bin/sh\nprintf '%s\\n' \"$*\" >> {}\n{body}\n",
             shell_quote(&self.log().display().to_string())
         );
-        fs::write(&path, script).unwrap();
-        fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
+        crate::test_executable::write(&path, script, 0o755).unwrap();
     }
 
     fn calls(&self) -> Vec<String> {

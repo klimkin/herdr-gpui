@@ -2,6 +2,7 @@
 //!
 //! ```toml
 //! [chat]
+//! auto_convert = false
 //! glide = true
 //! launcher = "plus"
 //! layout = "cards"
@@ -20,6 +21,9 @@
 //! machine or an SSH host, so an agent reaches a company endpoint that the
 //! pane's shell does not set up. Values sit in the config file as written,
 //! so a token belongs in the shell or the agent's own sign-in instead.
+//! `auto_convert` moves each terminal agent started after the window
+//! connected into a chat once it has settled, as `chat convert` does; see
+//! `chat::auto_convert`. Off, the default, agents stay in their terminals.
 //! `launcher` picks where tab strips offer a one-click chat with each
 //! installed agent. `layout` picks how a chat view draws its entries and composer. `glide`
 //! scrolls smoothly to a streaming reply's new text; off, the default, the
@@ -55,6 +59,8 @@ const RESERVED: [&str; 1] = [crate::chat::PROGRAM_ENV];
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
 #[serde(default, deny_unknown_fields)]
 pub struct ChatConfig {
+    /// Newly started terminal agents move into chats once settled.
+    pub auto_convert: bool,
     /// Code blocks number their lines unless a block's own button says otherwise.
     pub code_line_numbers: bool,
     /// Code blocks alternate their lines' background.
@@ -80,6 +86,7 @@ pub struct ChatConfig {
 impl Default for ChatConfig {
     fn default() -> Self {
         Self {
+            auto_convert: false,
             code_line_numbers: false,
             code_stripes: false,
             env: BTreeMap::new(),

@@ -168,4 +168,6 @@ fn a_restarted_machine_forgets_only_its_own_panes(cx: &mut TestAppContext) {
     assert!(focus_requests(&mut remote).is_empty());
 }
 
+mod cancellation;
 mod connectivity;
+mod legacy;

@@ -10,6 +10,8 @@ pub enum Error {
     AlreadyConverting,
     #[error("could not read the pane's processes")]
     Answer(#[source] serde_json::Error),
+    #[error("another window is moving this agent into a chat")]
+    Claimed,
     #[error(transparent)]
     Convert(#[from] sheprd_client::herdr::convert::Error),
     #[error("{0}")]

@@ -37,6 +37,31 @@ public struct MarkdownListItem: Hashable, Sendable {
     }
 }
 
+/// A code fence being read, line by line: what closes it.
+struct OpenFence {
+    let marker: Character
+    let length: Int
+
+    init(marker: Character, length: Int) {
+        self.marker = marker
+        self.length = length
+    }
+
+    /// The fence `line` opens, if it opens one.
+    init?(opening line: String) {
+        guard let fence = Parser.fence(line) else { return nil }
+        self.init(marker: fence.marker, length: fence.length)
+    }
+
+    /// Whether `line` closes the fence: a run of its marker at least as
+    /// long, and nothing after it.
+    func closes(_ line: String) -> Bool {
+        let trimmed = line.drop { $0 == " " }
+        let run = trimmed.prefix { $0 == marker }.count
+        return run >= length && trimmed.dropFirst(run).allSatisfy(\.isWhitespace)
+    }
+}
+
 private struct Parser {
     let lines: [String]
     var index = 0
@@ -73,12 +98,11 @@ private struct Parser {
     private mutating func code(_ fence: (marker: Character, length: Int, language: String?)) -> MarkdownBlock {
         index += 1
         var body: [String] = []
+        let open = OpenFence(marker: fence.marker, length: fence.length)
         while index < lines.count {
             let line = lines[index]
             index += 1
-            let trimmed = line.drop { $0 == " " }
-            let run = trimmed.prefix { $0 == fence.marker }.count
-            if run >= fence.length, trimmed.dropFirst(run).allSatisfy(\.isWhitespace) { break }
+            if open.closes(line) { break }
             body.append(line)
         }
         return .code(language: fence.language, text: body.joined(separator: "\n"))

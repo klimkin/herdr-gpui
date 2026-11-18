@@ -49,6 +49,8 @@ mod device_tag_groups;
 #[cfg(test)]
 mod devices_layout;
 #[cfg(test)]
+mod fold_all_hosts;
+#[cfg(test)]
 mod gpu_line;
 #[cfg(test)]
 mod host_agents;
@@ -607,6 +609,7 @@ pub(crate) fn fixture_window(window: &mut Window, cx: &mut Context<SheprdWindow>
         _terminal_focus: terminal_focus,
         chrome_region: None,
         hosted: false,
+        chat_rail_width: crate::panel_resize::CHAT_RAIL,
         chats: Default::default(),
         sound: Default::default(),
         bell: Default::default(),
@@ -693,6 +696,7 @@ pub(crate) fn fixture_window(window: &mut Window, cx: &mut Context<SheprdWindow>
         port_forwards: Default::default(),
         remote_browser: Vec::new(),
         remote_updates: Default::default(),
+        remote_work: Default::default(),
         #[cfg(feature = "cloud")]
         cloud_jobs: Default::default(),
         #[cfg(feature = "cloud")]
@@ -738,6 +742,7 @@ pub(crate) fn fixture_window(window: &mut Window, cx: &mut Context<SheprdWindow>
         focus,
         options: ConnectOptions::default(),
         last_queued_options: None,
+        last_typed: None,
         pending_resize: None,
         last_input: None,
         last_pointer: None,

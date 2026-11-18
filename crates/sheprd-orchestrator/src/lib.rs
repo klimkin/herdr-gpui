@@ -22,7 +22,7 @@ pub mod gitlab;
 pub mod location;
 pub mod model;
 pub mod naming;
-pub mod private_file;
+pub use sheprd_client::private_file;
 pub mod prompt;
 pub mod repo;
 pub mod review;

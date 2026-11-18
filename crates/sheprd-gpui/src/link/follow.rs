@@ -127,6 +127,7 @@ pub(crate) fn poll(view: &SheprdWindow, window: &Window, cx: &mut Context<Sheprd
             view.catalog.loaded() || view.endpoints.iter().any(|endpoint| &endpoint.id == id)
         }
         Some(Link::Open { .. }) => local_snapshot(view).is_some(),
+        Some(Link::Relay { .. }) => true,
     };
     let Some(handle) = MainWindow::of(window, cx) else {
         return;
@@ -179,6 +180,15 @@ fn follow_link(link: Link, handle: MainWindow, cx: &mut App) -> Result<Response,
                 )))
             })
             .unwrap_or(Err(Refusal::Closed)),
+        Link::Relay { relay, token } => {
+            let Ok(source) = handle.update(cx, |_, _, cx| cx.entity().downgrade()) else {
+                return Err(Refusal::Closed);
+            };
+            // i18n: data
+            let message = format!("Asking in Settings to add {relay}");
+            crate::settings_window::offer_linked_relay(source, relay, token, cx);
+            Ok(Response::done(message))
+        }
         Link::Open { path } => {
             let Ok(snapshot) = handle.read_with(cx, |view, _| local_snapshot(view)) else {
                 return Err(Refusal::Closed);

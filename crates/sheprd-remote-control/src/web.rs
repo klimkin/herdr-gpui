@@ -21,13 +21,16 @@ mod log;
 mod nearby;
 mod origins;
 mod pace;
+mod relay;
 mod render;
 mod shortcuts;
 mod stream;
 mod tags;
 mod terminal;
+mod typed;
 mod update;
 mod uploads;
+mod workspace;
 
 pub(crate) use api::{NEW_CHAT_WAIT, check_new_workspace, parse_agent};
 pub(crate) use fragments::folders;
@@ -40,6 +43,7 @@ pub(crate) use shortcuts::Shortcuts;
 pub(crate) use stream::Connected;
 pub(crate) use tags::Tags;
 pub(crate) use terminal::read_scrolled;
+pub(crate) use typed::{Relayed, TypedFrom};
 pub(crate) use uploads::Uploads;
 
 use crate::control::DeviceId;
@@ -86,6 +90,9 @@ pub(crate) struct State {
     pub(crate) fingerprint: String,
     pub(crate) github: crate::native::changes::github::Reader,
     pub(crate) hub: Arc<Hub>,
+    /// Lending this computer's GitHub sign-ins to phones, and which
+    /// repository each workspace is on.
+    pub(crate) lending: crate::native::github::Lending,
     /// How much this computer lets Live Activities say.
     pub(crate) live_activities: crate::app::config::ActivityDetail,
     /// This computer's CPU and memory, as `load` last read them.
@@ -103,6 +110,8 @@ pub(crate) struct State {
     pub(crate) pull_requests:
         tokio::sync::watch::Sender<Arc<crate::control::pull_requests::PullRequests>>,
     pub(crate) push: Option<Sender>,
+    /// The relays this computer listens on, when any are set.
+    pub(crate) relay: Option<Arc<crate::relay::Relays>>,
     /// How often each address may write a phone's error to the log.
     pub(crate) reports: Mutex<auth::RateLimiter<std::net::IpAddr>>,
     /// Origins served before, which an installed app may still send.
@@ -215,6 +224,7 @@ pub(crate) fn router(state: Shared) -> Router {
             post(api::subscribe_push).delete(api::unsubscribe_push),
         )
         .route("/api/push/key", get(api::push_key))
+        .route("/api/relay", get(relay::info).post(relay::enroll))
         .route(
             "/api/apns",
             post(api::register_apns).layer(DefaultBodyLimit::max(16 * 1024)),
@@ -229,8 +239,18 @@ pub(crate) fn router(state: Shared) -> Router {
         .route("/api/term/{pane}/rename", post(terminal::rename))
         .route("/api/stream", get(stream::stream))
         .route("/api/v2/chat/{pane}", get(crate::native::get_chat))
+        .route(
+            "/api/v2/chat/{pane}/summarize",
+            post(crate::native::summarize),
+        )
+        .route("/api/v2/chat/{pane}/title", post(crate::native::title))
+        .route("/api/v2/github/token", get(crate::native::github::token))
         .route("/api/v2/home", get(crate::native::get_home))
         .route("/api/v2/hosts", get(hosts::list))
+        .route(
+            "/api/v2/hosts/relay",
+            post(hosts::relay).layer(DefaultBodyLimit::max(16 * 1024)),
+        )
         .route("/api/v2/hosts/{host}/pair", post(hosts::pair))
         .route("/api/v2/live", get(crate::native::live))
         .route("/api/v2/new", get(crate::native::new_options))
@@ -274,6 +294,14 @@ pub(crate) fn router(state: Shared) -> Router {
         .route(
             "/api/v2/workspaces/{workspace}/rename",
             post(terminal::rename_workspace),
+        )
+        .route(
+            "/api/v2/workspaces/{workspace}/close",
+            post(workspace::close),
+        )
+        .route(
+            "/api/v2/workspaces/{workspace}/remove-worktree",
+            post(workspace::remove_worktree),
         )
         .route("/f/home", get(fragments::home))
         .route("/f/board", get(fragments::board))
@@ -427,6 +455,8 @@ pub(crate) fn bearer(headers: &HeaderMap) -> Option<&str> {
 pub(crate) enum ApiError {
     // keep-sorted start
     #[error(transparent)]
+    Agent(#[from] crate::hub::row_summary::Error),
+    #[error(transparent)]
     App(#[from] crate::app::Error),
     #[error(transparent)]
     Auth(#[from] auth::Error),
@@ -434,6 +464,8 @@ pub(crate) enum ApiError {
     Changes(#[from] crate::native::changes::Error),
     #[error("that is not a folder you can start a workspace in")]
     Folder,
+    #[error(transparent)]
+    GitHub(#[from] crate::native::github::Error),
     #[error(transparent)]
     Hub(#[from] crate::hub::Error),
     #[error("{0}")]
@@ -459,7 +491,9 @@ impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
         let status = match &self {
             Self::Unauthorized => StatusCode::UNAUTHORIZED,
+            Self::Agent(error) => error.status(),
             Self::Changes(error) => error.status(),
+            Self::GitHub(error) => error.status(),
             Self::TooManyStreams => StatusCode::TOO_MANY_REQUESTS,
             Self::NotFound => StatusCode::NOT_FOUND,
             Self::Auth(auth::Error::RateLimited | auth::Error::NearbyBusy) => {
@@ -473,13 +507,26 @@ impl IntoResponse for ApiError {
             Self::Auth(auth::Error::Links(auth::links::Error::UnknownHost)) => {
                 StatusCode::NOT_FOUND
             }
-            Self::Auth(auth::Error::Links(
-                auth::links::Error::Busy | auth::links::Error::TooMany,
-            )) => StatusCode::TOO_MANY_REQUESTS,
+            Self::Auth(
+                auth::Error::Links(auth::links::Error::Busy | auth::links::Error::TooMany)
+                | auth::Error::HostRelay(
+                    auth::host_relays::Error::Busy | auth::host_relays::Error::TooMany,
+                ),
+            ) => StatusCode::TOO_MANY_REQUESTS,
+            Self::Auth(auth::Error::SshAccess(
+                crate::ssh_access::Error::ServerOff | crate::ssh_access::Error::Unsupported,
+            )) => StatusCode::CONFLICT,
             Self::Auth(
                 auth::Error::Store { .. }
                 | auth::Error::StoreFormat { .. }
-                | auth::Error::Random(_),
+                | auth::Error::Random(_)
+                | auth::Error::SshAccess(
+                    crate::ssh_access::Error::File { .. }
+                    | crate::ssh_access::Error::Linked { .. }
+                    | crate::ssh_access::Error::NoHome
+                    | crate::ssh_access::Error::TooLarge { .. }
+                    | crate::ssh_access::Error::UnknownUser,
+                ),
             ) => StatusCode::INTERNAL_SERVER_ERROR,
             Self::Update(update::Error::AppClosed) => StatusCode::CONFLICT,
             Self::App(_) | Self::Upload(uploads::Error::Write(_)) => {

@@ -15,8 +15,10 @@ use sheprd_client::{
 };
 use std::sync::Arc;
 
+mod cancellation;
 mod completion;
 mod endpoints;
+mod legacy_cycle;
 
 const BOOT: &str = "boot-v1";
 const PANES: &[&str] = &["a", "b", "c", "d"];
@@ -45,7 +47,7 @@ fn snapshot(focused: &str) -> ClientShellSnapshot {
 }
 
 fn key(endpoint: &str, pane: &str) -> PaneKey {
-    PaneKey {
+    PaneKey::Herdr {
         endpoint: endpoint.into(),
         pane: pane.into(),
     }
@@ -84,8 +86,16 @@ fn arrive(view: &Entity<SheprdWindow>, cx: &mut VisualTestContext, snapshot: Cli
             popup: None,
             graphics: Default::default(),
         }));
+        let revision = snapshot.revision;
         state.snapshot = Some(Arc::new(snapshot));
-        state.activation = None;
+        if let Some(activation) = &mut state.activation {
+            activation.revision = Some(revision);
+        }
+        if state.surface_ready()
+            && let Some(activation) = &mut state.activation
+        {
+            activation.focus = None;
+        }
         state.dirty = true;
         *view.endpoints[view.selected_endpoint]
             .connection
@@ -120,6 +130,7 @@ fn connected<'a>(
     cx.update(|window, cx| {
         view.update(cx, |view, cx| {
             peer.prepare(view, cx);
+            view.live.supports_surface = true;
             *view.endpoints[view.selected_endpoint]
                 .connection
                 .inbox
@@ -253,7 +264,7 @@ fn tap(cx: &mut VisualTestContext, held: Modifiers, keystroke: &str) {
 
 #[gpui::test]
 fn holding_ctrl_walks_back_and_letting_go_settles(cx: &mut TestAppContext) {
-    let mut peer = MockPeer::advertising(&["pane.focus"]);
+    let mut peer = fenced();
     let (view, cx) = connected(cx, &peer, Keymap::default());
 
     cx.simulate_modifiers_change(Modifiers::control());
@@ -270,7 +281,7 @@ fn holding_ctrl_walks_back_and_letting_go_settles(cx: &mut TestAppContext) {
 
 #[gpui::test]
 fn ctrl_shift_tab_starts_from_the_oldest_pane(cx: &mut TestAppContext) {
-    let mut peer = MockPeer::advertising(&["pane.focus"]);
+    let mut peer = fenced();
     let (_, cx) = connected(cx, &peer, Keymap::default());
 
     tap(cx, Modifiers::control_shift(), "ctrl-shift-tab");
@@ -303,16 +314,17 @@ fn a_press_while_the_focus_is_landing_is_dropped(cx: &mut TestAppContext) {
     assert_eq!(focus_requests(&mut peer), ["c"]);
     // The cycle is still on C, so the next press goes on to B.
     view.read_with(cx, |view, _| {
-        let next = view
-            .recent_panes
-            .peek(Step::Back, &view.projections(), Some(&key(LOCAL, "c")));
-        assert_eq!(next, Some((2, key(LOCAL, "b"))));
+        assert!(
+            view.recent_panes
+                .peek(Step::Back, &view.projections(), Some(&key(LOCAL, "c")))
+                .is_none()
+        );
     });
 }
 
 #[gpui::test]
 fn an_open_palette_keeps_ctrl_tab_for_its_filters(cx: &mut TestAppContext) {
-    let mut peer = MockPeer::advertising(&["pane.focus"]);
+    let mut peer = fenced();
     let (view, cx) = connected(cx, &peer, Keymap::default());
     cx.update(|window, cx| {
         view.update(cx, |view, cx| view.open_palette(Filter::All, window, cx));
@@ -332,7 +344,7 @@ fn an_open_palette_keeps_ctrl_tab_for_its_filters(cx: &mut TestAppContext) {
 
 #[gpui::test]
 fn a_rebound_shortcut_replaces_ctrl_tab(cx: &mut TestAppContext) {
-    let mut peer = MockPeer::advertising(&["pane.focus"]);
+    let mut peer = fenced();
     let overrides = [("recent_pane".to_owned(), Binding::One("alt-`".into()))].into();
     let keymap =
         Keymap::with_overrides(&overrides, &Default::default(), &DaemonKeys::default()).unwrap();
@@ -350,7 +362,7 @@ fn a_rebound_shortcut_replaces_ctrl_tab(cx: &mut TestAppContext) {
 
 #[gpui::test]
 fn ime_composition_keeps_the_pane(cx: &mut TestAppContext) {
-    let mut peer = MockPeer::advertising(&["pane.focus"]);
+    let mut peer = fenced();
     let (view, cx) = connected(cx, &peer, Keymap::default());
     view.update(cx, |view, _| view.marked = "か".into());
 
@@ -376,32 +388,27 @@ fn leaving_the_window_settles_the_cycle(cx: &mut TestAppContext) {
     fn local(snapshot: &ClientShellSnapshot) -> [Projection<'_>; 1] {
         [Projection {
             endpoint: LOCAL,
+            available: true,
             snapshot: Some(snapshot),
         }]
     }
     view.update(cx, |view, _| {
         let recent = &mut view.recent_panes;
         for pane in ["a", "b", "c"] {
-            recent.observe(
-                &local(&snapshot(pane)),
-                Some(FocusObservation::Settled(key(LOCAL, pane))),
-            );
+            recent.observe(&local(&snapshot(pane)), Some(key(LOCAL, pane)));
         }
         let (index, target) = recent
             .peek(Step::Back, &local(&snapshot("c")), Some(&key(LOCAL, "c")))
             .unwrap();
         assert_eq!(target, key(LOCAL, "b"));
-        recent.begin(index, Modifiers::control(), Some(key(LOCAL, "c")));
+        recent.begin(index, Modifiers::control());
     });
 
     cx.deactivate_window();
 
     view.update(cx, |view, _| {
         let recent = &mut view.recent_panes;
-        recent.observe(
-            &local(&snapshot("b")),
-            Some(FocusObservation::Settled(key(LOCAL, "b"))),
-        );
+        recent.observe(&local(&snapshot("b")), Some(key(LOCAL, "b")));
         // Settled on B, so the pane before it is C again.
         assert_eq!(
             recent.peek(Step::Back, &local(&snapshot("b")), Some(&key(LOCAL, "b"))),

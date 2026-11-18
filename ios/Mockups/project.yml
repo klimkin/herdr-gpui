@@ -15,11 +15,18 @@ settings:
     TARGETED_DEVICE_FAMILY: "1,2"
     CODE_SIGNING_ALLOWED: NO
 
+packages:
+  SheprdRemoteCore:
+    path: ../SheprdRemoteCore
+
 targets:
   SheprdMockups:
     type: application
     platform: iOS
-    sources: [Sources]
+    # The app's own effect views, so the effects mockup draws what ships.
+    sources: [Sources, ../SheprdRemote/Views/Effects]
+    dependencies:
+      - package: SheprdRemoteCore
     info:
       path: Sources/Info.plist
       properties:

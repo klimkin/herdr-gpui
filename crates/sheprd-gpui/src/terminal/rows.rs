@@ -6,8 +6,8 @@
 //! that reads as the window's own edge. [`bottom_rows`] puts it above.
 
 use gpui::{
-    AnyElement, App, AvailableSpace, Bounds, Element, ElementId, GlobalElementId,
-    InspectorElementId, IntoElement, LayoutId, Pixels, Style, Window, point, px, relative,
+    AnyElement, App, AvailableSpace, Bounds, ContentMask, Element, ElementId, GlobalElementId,
+    InspectorElementId, IntoElement, LayoutId, Pixels, Style, Window, point, px, relative, size,
 };
 
 /// Fractions of a row a box may fall short of a whole row and still count as
@@ -15,13 +15,26 @@ use gpui::{
 /// rounding a hair under N rows tall, and must not lose one.
 const SLACK: f32 = 1e-3;
 
+/// Device pixels within which a row edge counts as half a pixel off.
+const TIE: f32 = 1e-3;
+
 /// How many whole rows of `cell_height` fit in `height`.
 pub(crate) fn whole_rows(height: f32, cell_height: f32) -> f32 {
     (height / cell_height.max(1.) + SLACK).floor()
 }
 
-/// The bottom-aligned whole rows of `bounds`, on whole device pixels at
-/// `scale`. A box under one row tall is left as it is.
+/// The box the bottom-aligned whole rows of `bounds` are laid out in, at
+/// `scale` device pixels per logical pixel. A box under one row tall is left
+/// as it is.
+///
+/// GPUI puts the box's origin on a whole device pixel and the painter rounds
+/// each row edge to one, half toward zero, so the top is chosen for the last
+/// row's edge to round onto `bounds`' bottom. The height is rounded up rather
+/// than to that edge, so the content never reads back a row short; it can
+/// reach up to one device pixel past the bottom, which [`bottom_rows`] clips.
+/// A last row ending half a device pixel from the bottom rounds either way
+/// through float error, so it is put past the bottom, where the clip hides
+/// the extra pixel, rather than short of it, where a gap would show.
 pub(crate) fn bottom_aligned(
     bounds: Bounds<Pixels>,
     cell_height: f32,
@@ -32,17 +45,19 @@ pub(crate) fn bottom_aligned(
     if rows < 1. {
         return bounds;
     }
-    let grid = ((rows * cell_height.max(1.) * scale).ceil() / scale).min(height);
-    Bounds::from_corners(
-        point(bounds.left(), bounds.bottom() - px(grid)),
-        bounds.bottom_right(),
+    let grid = rows * cell_height.max(1.) * scale;
+    let lift = (grid - 0.5 - TIE).ceil().min(height * scale);
+    Bounds::new(
+        point(bounds.left(), bounds.bottom() - px(lift / scale)),
+        size(bounds.size.width, px(grid.ceil() / scale)),
     )
 }
 
 /// Lays `content` out in the whole rows at the bottom of the box it sits in,
 /// so the sub-row remainder is above its first row. The cells' origin, hit
 /// testing, painting, and the rows the daemon is asked for all read the
-/// content's bounds, so they agree.
+/// content's bounds, so they agree. Nothing the content draws reaches below
+/// the box.
 pub(crate) fn bottom_rows(cell_height: f32, content: impl IntoElement) -> BottomRows {
     BottomRows {
         cell_height,
@@ -100,24 +115,39 @@ impl Element for BottomRows {
         cx: &mut App,
     ) {
         let grid = bottom_aligned(bounds, self.cell_height, window.scale_factor());
-        self.content.prepaint_as_root(
-            grid.origin,
-            grid.size.map(AvailableSpace::Definite),
-            window,
-            cx,
-        );
+        window.with_content_mask(Some(above(bounds, window)), |window| {
+            self.content.prepaint_as_root(
+                grid.origin,
+                grid.size.map(AvailableSpace::Definite),
+                window,
+                cx,
+            );
+        });
     }
 
     fn paint(
         &mut self,
         _: Option<&GlobalElementId>,
         _: Option<&InspectorElementId>,
-        _: Bounds<Pixels>,
+        bounds: Bounds<Pixels>,
         _: &mut (),
         _: &mut (),
         window: &mut Window,
         cx: &mut App,
     ) {
-        self.content.paint(window, cx);
+        window.with_content_mask(Some(above(bounds, window)), |window| {
+            self.content.paint(window, cx);
+        });
+    }
+}
+
+/// The window's current content mask, cut off at the bottom of `bounds`.
+fn above(bounds: Bounds<Pixels>, window: &Window) -> ContentMask<Pixels> {
+    let mask = window.content_mask().bounds;
+    ContentMask {
+        bounds: Bounds::from_corners(
+            mask.origin,
+            point(mask.right(), mask.bottom().min(bounds.bottom())),
+        ),
     }
 }

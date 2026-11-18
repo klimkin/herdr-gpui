@@ -176,6 +176,8 @@ pub enum Error {
     LinkOnAnotherHost { host: String },
     #[error(transparent)]
     ListeningPorts(#[from] crate::listening_ports::Error),
+    #[error(transparent)]
+    ListenToken(#[from] crate::control::listen_token::Error),
     #[error("Could not list this machine's network addresses: {0}")]
     LocalAddresses(#[source] io::Error),
     #[error("Git could not run")]
@@ -254,6 +256,8 @@ pub enum Error {
     PreferencesPath,
     #[error(transparent)]
     Processes(#[from] crate::processes::Error),
+    #[error(transparent)]
+    PublicRelays(#[from] crate::remote::public_relays::Error),
     #[error(transparent)]
     Px0(#[from] crate::px0::Error),
     #[error("XDG_CONFIG_HOME must be an absolute path")]

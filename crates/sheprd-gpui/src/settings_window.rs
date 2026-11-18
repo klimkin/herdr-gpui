@@ -15,7 +15,7 @@ mod layouts;
 mod navigation;
 mod pages;
 pub(crate) use layouts::{apply_loaded_layout, layout_load_revision};
-pub(crate) use pages::remote_control::open as open_remote;
+pub(crate) use pages::remote_control::{offer_linked_relay, open as open_remote};
 pub(crate) use pages::text_shortcuts::open as open_text_shortcuts;
 #[cfg(all(feature = "integration-test", target_os = "macos"))]
 mod native;

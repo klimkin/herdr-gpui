@@ -46,6 +46,46 @@ pub(crate) struct DeviceRecord {
     /// answered.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) links: Vec<Link>,
+    /// The device's keys for reaching this computer through relays, once
+    /// it sent them (`POST /api/relay`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) relay: Option<RelayKeys>,
+    /// When `relay` was last set, so keys signed before it, carried late
+    /// through another computer, cannot replace newer ones.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) relay_ms: Option<u64>,
+    /// Whether the device may borrow this computer's GitHub sign-in
+    /// (`control::github`). A record from before the switch existed reads
+    /// as on, as a new pairing defaults to.
+    #[serde(default = "share_github_default")]
+    pub(crate) share_github: bool,
+    /// The SSH key of a desktop let in over SSH through the relays: its
+    /// relay sessions reach the SSH server rather than the API.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) ssh: Option<crate::ssh_access::SshKey>,
+}
+
+fn share_github_default() -> bool {
+    true
+}
+
+/// A device's keys for relays, as it sent them, base64url: its tunnel
+/// static key (X25519), which the end-to-end handshake proves, and its
+/// dial key (P-256, SEC1 compressed), which the relay lets through.
+pub(crate) use crate::control::host_relay::Keys as RelayKeys;
+
+impl RelayKeys {
+    /// The tunnel key, when it is one.
+    pub(crate) fn tunnel_key(&self) -> Option<[u8; 32]> {
+        super::decode_fixed::<32>(&self.tunnel).ok()
+    }
+
+    /// The dial key, when it is a P-256 point.
+    pub(crate) fn dial_key(&self) -> Option<[u8; 33]> {
+        let key = super::decode_fixed::<33>(&self.dial).ok()?;
+        p256::PublicKey::from_sec1_bytes(&key).ok()?;
+        Some(key)
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -111,17 +151,19 @@ impl Devices {
     /// Stores an approved device. Blocking.
     #[cfg(test)]
     pub(crate) fn add(&mut self, device: NewDevice, now_ms: u64) -> Result<()> {
-        self.add_with(device, now_ms, None, Vec::new())
+        self.add_with(device, now_ms, None, Vec::new(), true)
     }
 
-    /// Stores a device with the computer that vouched for it and the hosts
-    /// it may be paired with. Blocking.
+    /// Stores a device with the computer that vouched for it, the hosts
+    /// it may be paired with, and whether it may borrow the GitHub sign-in.
+    /// Blocking.
     pub(crate) fn add_with(
         &mut self,
         device: NewDevice,
         now_ms: u64,
         via: Option<String>,
         links: Vec<Link>,
+        share_github: bool,
     ) -> Result<()> {
         self.records.push(DeviceRecord {
             app: device.app,
@@ -134,6 +176,10 @@ impl Devices {
             apns: None,
             via,
             links,
+            relay_ms: device.relay.is_some().then_some(now_ms),
+            relay: device.relay,
+            share_github,
+            ssh: device.ssh,
         });
         self.save_or_undo(|devices| {
             devices.records.pop();
@@ -167,6 +213,7 @@ impl Devices {
                 connected: connected(&record.id),
                 via: record.via.clone(),
                 hosts: Vec::new(),
+                share_github: record.share_github,
             })
             .collect()
     }
@@ -197,6 +244,22 @@ impl Devices {
         })
     }
 
+    /// Lets a device borrow the GitHub sign-in, or stops it; whether it
+    /// is paired. Blocking.
+    pub(crate) fn set_share_github(&mut self, id: &DeviceId, share: bool) -> Result<bool> {
+        let Ok(record) = self.record_mut(id) else {
+            return Ok(false);
+        };
+        let before = std::mem::replace(&mut record.share_github, share);
+        let id = id.clone();
+        self.save_or_undo(move |devices| {
+            if let Ok(record) = devices.record_mut(&id) {
+                record.share_github = before;
+            }
+        })?;
+        Ok(true)
+    }
+
     /// Marks a device seen now, writing the store only when its stored time
     /// is a minute old. Blocking when it writes.
     pub(crate) fn touch(&mut self, id: &DeviceId, now_ms: u64) -> Result<()> {
@@ -217,6 +280,27 @@ impl Devices {
     /// Gives a device a new key, as its Home Screen app takes over from the
     /// browser. The browser's push subscription goes with the old key.
     /// Blocking.
+    /// Stores `keys` as the device's relay keys, set at `now_ms`; whether
+    /// it is paired. Blocking.
+    pub(crate) fn set_relay(
+        &mut self,
+        id: &DeviceId,
+        keys: RelayKeys,
+        now_ms: u64,
+    ) -> Result<bool> {
+        let Some(record) = self.records.iter_mut().find(|record| &record.id == id) else {
+            return Ok(false);
+        };
+        let before = (record.relay.replace(keys), record.relay_ms.replace(now_ms));
+        let index = self.records.iter().position(|record| &record.id == id);
+        self.save_or_undo(|devices| {
+            if let Some(record) = index.and_then(|index| devices.records.get_mut(index)) {
+                (record.relay, record.relay_ms) = before;
+            }
+        })?;
+        Ok(true)
+    }
+
     pub(crate) fn rekey(&mut self, id: &DeviceId, public_key: PublicKey) -> Result<()> {
         let record = self.record_mut(id)?;
         let old = (
@@ -338,7 +422,7 @@ fn store_error(operation: StoreOperation, path: &Path, source: io::Error) -> Err
 /// Replaces `path` with `content` through a temporary file in the same
 /// directory, created 0600 on Unix. Windows has no mode bits; the file
 /// inherits the private state directory's ACL.
-pub(super) fn write_private(path: &Path, content: &[u8]) -> Result<()> {
+pub(crate) fn write_private(path: &Path, content: &[u8]) -> Result<()> {
     static NEXT_TEMP: AtomicU64 = AtomicU64::new(1);
     let parent = path.parent().unwrap_or(Path::new("."));
     let name = path.file_name().unwrap_or_default().to_string_lossy();

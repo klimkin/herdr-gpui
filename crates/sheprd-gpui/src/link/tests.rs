@@ -3,6 +3,7 @@
 use super::*;
 
 mod branding;
+mod relay;
 
 #[cfg(windows)]
 const CHECKOUT: &str = r"C:\Users\me\src\herdr-gpui";

@@ -5,6 +5,8 @@ use sheprd_client::protocol::ToastHerdrPosition;
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum Preference {
     AgentsPlacement(AgentsPlacement),
+    /// `[chat] auto_convert`: whether new terminal agents move into chats.
+    ChatAutoConvert(bool),
     /// `[chat] code_line_numbers`: whether code blocks number their lines.
     ChatCodeLineNumbers(bool),
     /// `[chat] code_stripes`: whether code blocks alternate line backgrounds.
@@ -139,6 +141,9 @@ impl Config {
             let (table, key, value) = match edit {
                 Preference::AgentsPlacement(placement) => {
                     (None, "agents_placement", Some(placement.as_str().into()))
+                }
+                Preference::ChatAutoConvert(value) => {
+                    (Some("chat"), "auto_convert", Some(value.into()))
                 }
                 Preference::ChatCodeLineNumbers(value) => {
                     (Some("chat"), "code_line_numbers", Some(value.into()))

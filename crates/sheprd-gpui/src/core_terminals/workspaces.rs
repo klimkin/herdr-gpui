@@ -94,6 +94,37 @@ impl SheprdWindow {
         );
     }
 
+    /// [`Self::new_kept_workspace`] with a chat with `agent` in `cwd` in a
+    /// tab after its shell's, shown once it starts. The shell is asked for
+    /// first, so the checkout keeps a usable tab whether the chat is
+    /// refused here or fails as it starts, as a Herdr 1 chat leaves its
+    /// shell. Answers why a chat was refused.
+    pub(crate) fn new_kept_chat_workspace(
+        &mut self,
+        agent: sheprd_chat_protocol::Agent,
+        label: Option<&str>,
+        cwd: PathBuf,
+        cx: &mut Context<Self>,
+    ) -> Result<(), crate::chat::StartError> {
+        let Some(id) = self.keep_new_workspace(label, Some(&cwd), cx) else {
+            return Ok(());
+        };
+        let scope = scope_of(self);
+        let spawn = Spawn {
+            cwd: Some(cwd.clone()),
+            ..Spawn::default()
+        };
+        self.start_core_program(
+            Purpose::Tab {
+                scope: scope.clone(),
+                workspace: id.clone(),
+            },
+            spawn,
+            cx,
+        );
+        self.start_core_chat_tab(agent, scope, id, Some(cwd), cx)
+    }
+
     /// Keeps a new workspace for a checkout at `cwd` whose first tab shows
     /// `location`, such as a herdr-core terminal a worker already started,
     /// and brings it to the front. Answers its ID, or `None` when it could
@@ -207,7 +238,8 @@ impl SheprdWindow {
     // Tests only: production keeps and closes by the lane's own scope.
     #[cfg(test)]
     /// This computer's scope, whose workspaces the app keeps, whichever
-    /// host is shown.
+    /// host is shown. Runs and lanes close and open through their own host.
+    #[cfg(test)]
     pub(crate) fn local_kept_scope(&self) -> Option<Scope> {
         self.core_host().map(|index| scope(&self.endpoints[index]))
     }
@@ -225,6 +257,7 @@ impl SheprdWindow {
     #[cfg(test)]
     /// Closes the workspace this computer keeps at `cwd`, without showing
     /// this computer; whether there was one.
+    #[cfg(test)]
     pub(crate) fn close_local_kept_folder(
         &mut self,
         cwd: &Path,
@@ -249,6 +282,7 @@ impl SheprdWindow {
     /// workspace without focusing it. Answers its ID, or `None`, with a
     /// flash, when it could not be kept or its tab not opened, which ends
     /// the terminals `location` drives.
+    #[cfg(test)]
     pub(crate) fn open_kept_workspace_behind(
         &mut self,
         label: &str,

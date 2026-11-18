@@ -52,6 +52,9 @@ pub enum Command {
     ToggleMenuBar,
     /// Shows or hides the panel of mod sections on the window's right.
     ToggleModPanel,
+    /// Collapses every host in the sidebar, or expands them all when they
+    /// all are.
+    ToggleAllHosts,
     /// Moves keyboard focus to the next of the terminal, the title bar, the
     /// sidebar, and the status bar, where Tab moves between controls.
     FocusNextRegion,
@@ -61,6 +64,9 @@ pub enum Command {
     DevicesOverview,
     /// Shows the alerts kept on the Overview.
     NotificationHistory,
+    /// Dismisses every toast, empties every host's alerts, and withdraws the
+    /// OS notifications the app posted, in every window.
+    ClearAllNotifications,
     /// Starts a shell in herdr-core (Herdr 2) and shows it in a tab.
     NewCoreTerminal,
     /// Opens a watch-only view of the focused herdr-core pane in a new tab.
@@ -614,6 +620,11 @@ pub const COMMANDS: &[CommandInfo] = &[
         message: "commands-toggle-mod-panel",
     },
     CommandInfo {
+        command: Command::ToggleAllHosts,
+        name: "toggle_all_hosts",
+        message: "commands-toggle-all-hosts",
+    },
+    CommandInfo {
         command: Command::FocusNextRegion,
         name: "focus_next_region",
         message: "commands-focus-next-region",
@@ -637,6 +648,11 @@ pub const COMMANDS: &[CommandInfo] = &[
         command: Command::NotificationHistory,
         name: "notification_history",
         message: "commands-notification-history",
+    },
+    CommandInfo {
+        command: Command::ClearAllNotifications,
+        name: "clear_all_notifications",
+        message: "commands-clear-all-notifications",
     },
     CommandInfo {
         command: Command::NewCoreTerminal,

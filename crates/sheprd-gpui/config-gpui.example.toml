@@ -560,6 +560,13 @@ size = 12
 # as each chunk lands. Settings > General edits this while ACP chats are on.
 # glide = false
 #
+# Move each terminal agent that starts after the window connected (by you,
+# `herdr agent start`, or another tool) into a chat once it has been idle for
+# 10 seconds, as `sheprd chat convert` does. Herdr 1 panes only; see
+# docs/rich-chat.md. Settings > Chat edits this.
+# Command line: sheprd config set chat.auto_convert true
+# auto_convert = false
+#
 # Where tab strips offer a one-click chat with each installed agent; "+" keeps
 # opening a terminal tab in every placement. "plus" (the agents slide out
 # beside "+" under the pointer), "beside" (right after "+"), "leading" (before
@@ -600,6 +607,15 @@ size = 12
 # Forget a paired device that has not connected for this many days (1 to 365),
 # or 0 to keep it until it is revoked.
 # device_idle_days = 30
+# Relays that let paired phones reach this computer from any network. Each is
+# an address, or a table that also names it, so `sheprd remote status` and the
+# phone's computer page tell them apart (name up to 64 characters, description
+# up to 256, up to 8 tags of up to 32).
+# relays = [
+#   "https://relay.example.org",
+#   { endpoint = "https://fra3.example.org", name = "fra3",
+#     description = "not for public use", tags = ["eu", "private"] },
+# ]
 
 # Native GitHub sign-in uses the public Sheprd GitHub App by default.
 # Optionally override with your own Device Flow-enabled app's public client ID.

@@ -9,13 +9,16 @@
 //! host through `herdr_cli`, on this machine or over SSH, and types the line
 //! once the window still shows that host.
 
+pub(in crate::chat) mod claim;
 mod core;
 mod error;
 mod remote;
+mod stage;
 
 pub(crate) use core::Job as CoreJob;
 
 pub use error::Error;
+pub(crate) use stage::Stage;
 
 use super::{Route, existing};
 use crate::{
@@ -87,8 +90,19 @@ struct Request {
     scope: existing::Scope,
 }
 
+/// Commits the worker to acting on the pane, unless typing reached it
+/// first: a Ctrl+C would clear the draft, and a resume line would mix with
+/// it or restart an agent the user quit.
+fn committed(stage: &Stage) -> Result<(), Error> {
+    if stage.commit() {
+        Ok(())
+    } else {
+        Err(convert::Error::Stopped.into())
+    }
+}
+
 /// The worker's whole job: the line to type once the agent has stopped.
-fn run(request: &Request, cancelled: &AtomicBool) -> Result<String, Error> {
+fn run(request: &Request, cancelled: &AtomicBool, stage: &Stage) -> Result<String, Error> {
     let Request {
         agent,
         pane,
@@ -130,10 +144,16 @@ fn run(request: &Request, cancelled: &AtomicBool) -> Result<String, Error> {
     convert::stop(
         *agent,
         || process_info(&host, pane, cancelled).map(|info| convert::shell_in_front(&info)),
-        || Ok(existing::query(&host, &keys, cancelled).map(drop)?),
+        || {
+            committed(stage)?;
+            Ok(existing::query(&host, &keys, cancelled).map(drop)?)
+        },
         || std::thread::sleep(convert::POLL),
         cancelled,
     )?;
+    // An agent the user quit leaves the shell in front, and no key was
+    // pressed: the line still waits on the same check.
+    committed(stage)?;
     Ok(line)
 }
 
@@ -141,10 +161,18 @@ fn run(request: &Request, cancelled: &AtomicBool) -> Result<String, Error> {
 /// further, as a window that closes or a pane that moves on must.
 #[derive(Debug)]
 pub(crate) struct Job {
+    /// Started by `[chat] auto_convert` rather than asked for, so its
+    /// outcome is logged and handed back rather than flashed.
+    pub(super) automatic: bool,
     cancelled: Arc<AtomicBool>,
-    pane: String,
+    /// Keeps every other window of this app off the pane until the move
+    /// has typed its line or given up.
+    _claim: Option<claim::Claim<'static>>,
+    pub(super) pane: String,
     result: mpsc::Receiver<Result<String, Error>>,
     scope: existing::Scope,
+    /// Whether the worker has pressed a key, which typing may still stop.
+    pub(in crate::chat) stage: Arc<Stage>,
 }
 
 #[cfg(test)]
@@ -161,10 +189,13 @@ impl Job {
         let (sender, result) = mpsc::sync_channel(1);
         let cancelled = Arc::new(AtomicBool::new(false));
         let job = Self {
+            automatic: false,
             cancelled: cancelled.clone(),
+            _claim: None,
             pane: pane.to_owned(),
             result,
             scope,
+            stage: Arc::default(),
         };
         (job, sender, cancelled)
     }
@@ -176,23 +207,28 @@ impl Drop for Job {
     }
 }
 
-fn spawn(request: Request) -> Result<Job, Error> {
+fn spawn(request: Request, claim: claim::Claim<'static>) -> Result<Job, Error> {
     let cancelled = Arc::new(AtomicBool::new(false));
     let flag = cancelled.clone();
     let (sender, result) = mpsc::sync_channel(1);
     let pane = request.pane.clone();
     let scope = request.scope.clone();
+    let stage = Arc::new(Stage::default());
+    let worker_stage = stage.clone();
     std::thread::Builder::new()
         .name("herdr-chat-convert".into())
         .spawn(move || {
-            let _ = sender.send(run(&request, &flag));
+            let _ = sender.send(run(&request, &flag, &worker_stage));
         })
         .map_err(Error::Worker)?;
     Ok(Job {
+        automatic: false,
         cancelled,
+        _claim: Some(claim),
         pane,
         result,
         scope,
+        stage,
     })
 }
 
@@ -258,12 +294,19 @@ impl SheprdWindow {
             selection: self.selection_epoch,
             connection: endpoint.generation,
         };
-        self.chats.converting = Some(spawn(Request {
-            agent,
-            pane: pane.clone(),
-            program,
-            scope,
-        })?);
+        // Another window of this app may be moving the same agent.
+        let claim = claim::CLAIMS
+            .claim(&scope.boot, &pane)
+            .ok_or(Error::Claimed)?;
+        self.chats.converting = Some(spawn(
+            Request {
+                agent,
+                pane: pane.clone(),
+                program,
+                scope,
+            },
+            claim,
+        )?);
         Ok((pane, agent))
     }
 
@@ -356,8 +399,10 @@ impl SheprdWindow {
             self.type_script_line(&job.scope.boot, &job.pane, &line)
                 .map_err(|error| Error::Type(Arc::new(error)))
         });
-        if let Err(error) = typed {
-            self.flash_convert_error(&error, cx);
+        match typed {
+            Err(error) if job.automatic => self.auto_convert_failed(&job.pane, &error),
+            Err(error) => self.flash_convert_error(&error, cx),
+            Ok(()) => {}
         }
         cx.notify();
     }

@@ -5,6 +5,7 @@
 commands-about = About Sheprd
 commands-annotate-selection = Annotate Selection for the Agent
 commands-back = Back
+commands-clear-all-notifications = Clear All Notifications
 commands-clear-pane = Clear Pane
 commands-close-pane = Close Pane
 commands-close-tab = Close Tab
@@ -94,6 +95,7 @@ commands-swap-pane-left = Swap Pane Left
 commands-swap-pane-right = Swap Pane Right
 commands-swap-pane-up = Swap Pane Up
 commands-themes = Themes
+commands-toggle-all-hosts = Collapse or Expand All Hosts
 commands-toggle-annotate = Toggle Annotate
 commands-toggle-full-screen = Toggle Full Screen
 commands-toggle-sidebar = Toggle Sidebar

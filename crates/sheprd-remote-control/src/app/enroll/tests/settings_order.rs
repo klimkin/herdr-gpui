@@ -117,7 +117,13 @@ fn settings_held_by_sheprd_are_left_until_its_save_is_done() {
     assert!(!local.exists());
     fs::write(&local, "theme = \"dark\"\n").unwrap();
     drop(lock);
-    assert!(enable(&path).unwrap().enabled);
+    // A child another test forks may hold a copy of the lock until it
+    // execs, so wait for it as the daemon does rather than not at all.
+    assert!(
+        enable_settings_at(&path, SETTINGS_LOCK_WAIT)
+            .unwrap()
+            .enabled
+    );
     // The save Sheprd finished is kept and turned on.
     assert_eq!(
         fs::read_to_string(&local).unwrap(),

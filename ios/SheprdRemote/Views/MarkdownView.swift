@@ -5,12 +5,21 @@ import UIKit
 /// An agent's answer as native blocks (`MarkdownBlock`): code scrolls
 /// sideways with Copy, tables scroll as a grid, and a long press copies a
 /// block. Blocks keep their positions as text streams in, so appended text
-/// grows the last block without reflowing the ones above it.
+/// grows the last block without reflowing the ones above it. Inline text
+/// is `InlineMarkdown`'s: `:big[…]` spans set their size, and only web
+/// links stay links (opening one asks first, see ChatScreen).
 struct MarkdownView: View {
-    let text: String
+    let blocks: [MarkdownBlock]
+
+    init(blocks: [MarkdownBlock]) {
+        self.blocks = blocks
+    }
+
+    init(text: String) {
+        blocks = MarkdownBlock.parse(text)
+    }
 
     var body: some View {
-        let blocks = MarkdownBlock.parse(text)
         VStack(alignment: .leading, spacing: 10) {
             ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
                 BlockView(block: block)
@@ -18,32 +27,19 @@ struct MarkdownView: View {
         }
     }
 
-    /// Inline markdown from the agent, which is untrusted: only `http` and
-    /// `https` links stay links (opening one asks first, see ChatScreen),
-    /// so transcript text can never follow the app's own scheme.
-    static func inline(_ text: String) -> AttributedString {
-        guard var styled = try? AttributedString(markdown: text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))
-        else { return AttributedString(text) }
-        for run in styled.runs {
-            if let link = run.link, !webSchemes.contains(link.scheme?.lowercased() ?? "") {
-                styled[run.range].link = nil
-            }
-        }
-        return styled
-    }
-
     static let webSchemes: Set<String> = ["http", "https"]
 }
 
-private struct BlockView: View {
+/// One block of Markdown.
+struct BlockView: View {
     let block: MarkdownBlock
 
     var body: some View {
         switch block {
         case let .paragraph(text):
-            Text(MarkdownView.inline(text)).textSelection(.enabled).copyable(text)
+            SizedMarkdown(text: text).textSelection(.enabled).copyable(text)
         case let .heading(level, text):
-            Text(MarkdownView.inline(text)).font(font(level)).padding(.top, level <= 2 ? 6 : 2)
+            SizedMarkdown(text: text, style: style(level)).font(font(level)).padding(.top, level <= 2 ? 6 : 2)
                 .accessibilityAddTraits(.isHeader)
         case let .code(language, text):
             CodeBlock(language: language, text: text)
@@ -52,7 +48,7 @@ private struct BlockView: View {
                 ForEach(Array(items.enumerated()), id: \.offset) { index, item in
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
                         marker(ordered: ordered, number: start + index, item: item)
-                        Text(MarkdownView.inline(item.text)).textSelection(.enabled)
+                        SizedMarkdown(text: item.text).textSelection(.enabled)
                     }
                     .padding(.leading, CGFloat(item.depth) * 18)
                 }
@@ -61,13 +57,23 @@ private struct BlockView: View {
         case let .quote(text):
             HStack(spacing: 10) {
                 RoundedRectangle(cornerRadius: 1.5).fill(.quaternary).frame(width: 3)
-                Text(MarkdownView.inline(text)).foregroundStyle(.secondary).textSelection(.enabled)
+                SizedMarkdown(text: text).foregroundStyle(.secondary).textSelection(.enabled)
             }
             .fixedSize(horizontal: false, vertical: true)
         case let .table(header, rows):
             TableBlock(header: header, rows: rows)
         case .rule:
             Divider().padding(.vertical, 4)
+        }
+    }
+
+    /// The text style a heading's sized spans scale from.
+    private func style(_ level: Int) -> UIFont.TextStyle {
+        switch level {
+        case 1: .title2
+        case 2: .title3
+        case 3: .headline
+        default: .subheadline
         }
     }
 
@@ -138,14 +144,14 @@ private struct TableBlock: View {
             Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 6) {
                 GridRow {
                     ForEach(Array(header.enumerated()), id: \.offset) { _, cell in
-                        Text(MarkdownView.inline(cell)).font(.subheadline.weight(.semibold))
+                        SizedMarkdown(text: cell, style: .subheadline).font(.subheadline.weight(.semibold))
                     }
                 }
                 Divider()
                 ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
                     GridRow {
                         ForEach(Array(row.enumerated()), id: \.offset) { _, cell in
-                            Text(MarkdownView.inline(cell)).font(.subheadline)
+                            SizedMarkdown(text: cell, style: .subheadline).font(.subheadline)
                         }
                     }
                 }

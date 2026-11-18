@@ -25,10 +25,10 @@ fn a_background_reconnection_to_the_same_boot_keeps_its_history(cx: &mut TestApp
     remote.client.handle.disconnect();
     view.update(cx, |view, cx| view.poll_endpoints(cx));
     let replacement = fenced();
-    view.update(cx, |view, _| {
+    view.update(cx, |view, cx| {
         view.endpoints[1].connection.handle = Some(replacement.client.handle.clone());
         view.endpoints[1].live.status = ConnectionStatus::Connected;
-        view.observe_recent_panes();
+        view.observe_recent_panes(cx);
     });
 
     tap(cx, Modifiers::control(), "ctrl-tab");

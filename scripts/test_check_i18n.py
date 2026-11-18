@@ -249,15 +249,16 @@ class PlatformTests(unittest.TestCase):
         unnamed = parse("menu-quit = Quit\n", Path("crates/app/locales/fr/menu.ftl"))[0]
         errors = check_i18n.platform([*self.FILES, unnamed], plist, translations, desktop)
         plist_path, desktop_path = check_i18n.INFO_PLIST, check_i18n.DESKTOP_ENTRY
+        installer = check_i18n.INSTALLER
         self.assertEqual(
             errors,
             [
                 "fr does not name itself: add language-name to its language.ftl",
                 f"{plist_path}: CFBundleDevelopmentRegion must be en-US",
                 f"{plist_path}: CFBundleLocalizations lists ['en-US'], the app has ['en-US', 'fr', 'he']",
-                "scripts/release/installer/de.isl: de is not one of the app's languages",
-                "scripts/release/installer/fr.isl is missing: the installer has no fr text",
-                "scripts/release/installer/he.isl is missing: the installer has no he text",
+                f"{translations[1]}: de is not one of the app's languages",
+                f"{installer}/fr.isl is missing: the installer has no fr text",
+                f"{installer}/he.isl is missing: the installer has no he text",
                 f"{desktop_path}: [pt_BR] is not one of the app's languages",
                 f"{desktop_path}: no Comment[fr] for fr",
                 f"{desktop_path}: no Comment[he] for he",

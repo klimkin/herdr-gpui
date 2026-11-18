@@ -482,7 +482,9 @@ impl Settings {
             sidebar_start_collapsed: parsed.ui.sidebar_start_collapsed,
             sound_enabled: parsed.ui.sound.enabled,
             tab_bar_position: parsed.ui.tab_bar_position,
-            theme_name: theme_name.into(),
+            // The card name the theme grid lists, so a saved alias such as
+            // `tokyonight` locates and outlines its `tokyo-night` card.
+            theme_name: palette::canonical(theme_name).unwrap_or(theme_name).into(),
             toast_delay_seconds: delay,
             toast_delivery: toast.delivery.unwrap_or(if toast.enabled == Some(true) {
                 ToastDelivery::Herdr
@@ -632,6 +634,11 @@ impl Settings {
 
     pub(crate) fn status_color(&self, status: AgentStatus, light: bool) -> u32 {
         self.colors(light).status(status)
+    }
+
+    /// Whether the effective Herdr theme takes its colors from a terminal.
+    pub(crate) fn terminal_theme(&self, light: bool) -> bool {
+        self.colors(light).terminal
     }
 }
 

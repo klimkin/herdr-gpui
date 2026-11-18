@@ -11,6 +11,8 @@ pub enum Error {
     Control(#[from] crate::control::Error),
     #[error(transparent)]
     Enroll(#[from] super::enroll::Error),
+    #[error("remote.github_hosts has {host}, which is not a host name")]
+    GitHubHost { host: String },
     #[error("remote.device_idle_days must be between 0 (never) and 365")]
     IdleDays,
     #[error("Could not {operation} {}", path.display())]
@@ -34,6 +36,20 @@ pub enum Error {
     ProgramMissing,
     #[error("The pairing link does not fit in a QR code")]
     Qr(#[source] qrcode::types::QrError),
+    #[error("remote.relays has {relay}, which is not a relay address")]
+    Relay {
+        relay: String,
+        #[source]
+        source: sheprd_relay::endpoint::Error,
+    },
+    #[error("remote.relays gives {relay} a label it cannot use: {source}")]
+    RelayLabel {
+        relay: String,
+        #[source]
+        source: crate::relay_label::Error,
+    },
+    #[error("Sheprd keeps listen tokens for at most {max} relays")]
+    RelayTokens { max: usize },
     #[error("{program} failed ({status}): {stderr}")]
     Service {
         program: &'static str,

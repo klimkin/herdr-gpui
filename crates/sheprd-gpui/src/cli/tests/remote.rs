@@ -2,6 +2,7 @@ use super::*;
 use control::{ControlCommand, Invocation, RemoteCommand};
 
 mod addresses;
+mod relay_token;
 
 fn parse(args: &[&str]) -> Result<Invocation, CliError> {
     LaunchOptions::parse(args.iter().copied()).map(|options| match options.mode {

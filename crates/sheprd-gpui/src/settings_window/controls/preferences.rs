@@ -56,12 +56,36 @@ impl SettingsWindow {
         edit: Preference,
         cx: &mut Context<Self>,
     ) {
+        self.save_preference_then(edit, |_| {}, cx);
+    }
+
+    /// [`Self::save_preference`], then `on_saved` once the write succeeded;
+    /// never when it failed or another save was still running.
+    pub(in crate::settings_window) fn save_preference_then(
+        &mut self,
+        edit: Preference,
+        on_saved: impl FnOnce(&mut Context<Self>) + 'static,
+        cx: &mut Context<Self>,
+    ) {
         #[cfg(test)]
         if let Some(io) = self.controls.preference_io.clone() {
-            self.save_with(move || (io.write)(edit), move || (io.load)(), false, cx);
+            self.save_with_completion(
+                move || (io.write)(edit),
+                move || (io.load)(),
+                false,
+                on_saved,
+                cx,
+            );
             return;
         }
-        self.save_native(move || Config::save_preference(edit), cx);
+        let load = self.loader(cx);
+        self.save_with_completion(
+            move || Config::save_preference(edit),
+            load,
+            false,
+            on_saved,
+            cx,
+        );
     }
 
     pub(in crate::settings_window) fn render_integration_controls(

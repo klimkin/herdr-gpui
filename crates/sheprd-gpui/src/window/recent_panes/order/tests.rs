@@ -35,7 +35,7 @@ fn remote(focused: &str) -> ClientShellSnapshot {
 }
 
 fn key(endpoint: &str, pane: &str) -> PaneKey {
-    PaneKey {
+    PaneKey::Herdr {
         endpoint: endpoint.into(),
         pane: pane.into(),
     }
@@ -46,7 +46,11 @@ fn projections<'a>(
 ) -> Vec<Projection<'a>> {
     endpoints
         .iter()
-        .map(|&(endpoint, snapshot)| Projection { endpoint, snapshot })
+        .map(|&(endpoint, snapshot)| Projection {
+            endpoint,
+            snapshot,
+            available: true,
+        })
         .collect()
 }
 
@@ -61,10 +65,7 @@ fn observe(
         .find(|(endpoint, _)| *endpoint == selected)
         .and_then(|(_, snapshot)| snapshot.as_ref()?.focused_pane_id.as_deref())
         .map(|pane| key(selected, pane));
-    recent.observe(
-        &projections(endpoints),
-        focused.map(FocusObservation::Settled),
-    );
+    recent.observe(&projections(endpoints), focused);
 }
 
 /// Local is the only endpoint and shows `snapshot`.
@@ -84,7 +85,10 @@ fn peek_local(
             &projections(&[(LOCAL, Some(snapshot))]),
             current.as_ref(),
         )
-        .map(|(index, key)| (index, key.pane))
+        .map(|(index, key)| match key {
+            PaneKey::Herdr { pane, .. } => (index, pane),
+            PaneKey::Core(_) => panic!("Herdr fixture"),
+        })
 }
 
 /// Focuses each of `panes` on Local in turn, as clicks would.
@@ -101,9 +105,10 @@ fn order(recent: &RecentPanes) -> Vec<String> {
     recent
         .order
         .iter()
-        .map(|key| match key.endpoint.as_str() {
-            LOCAL => key.pane.clone(),
-            endpoint => format!("{endpoint}:{}", key.pane),
+        .map(|key| match key {
+            PaneKey::Herdr { endpoint, pane } if endpoint == LOCAL => pane.clone(),
+            PaneKey::Herdr { endpoint, pane } => format!("{endpoint}:{pane}"),
+            PaneKey::Core(pane) => format!("core:{pane:?}"),
         })
         .collect()
 }
@@ -112,7 +117,7 @@ fn order(recent: &RecentPanes) -> Vec<String> {
 /// request is queued, followed by the daemon's report that the focus landed.
 fn press(recent: &mut RecentPanes, step: Step, focused: &str, held: Modifiers) -> Option<String> {
     let (index, pane) = peek_local(recent, step, &focusing(focused))?;
-    recent.begin(index, held, Some(key(LOCAL, focused)));
+    recent.begin(index, held);
     observe_local(recent, &focusing(&pane));
     Some(pane)
 }
@@ -250,14 +255,14 @@ fn the_order_is_frozen_while_a_cycle_is_open() {
     press(&mut recent, Step::Back, "c", Modifiers::control());
     observe_local(&mut recent, &at("boot", &["a", "b"], Some("a")));
 
-    assert_eq!(order(&recent), ["c", "b", "a"]);
+    assert_eq!(order(&recent), ["b", "a"]);
 }
 
 #[test]
 fn a_focus_landing_after_the_commit_changes_nothing() {
     let mut recent = visited(&["a", "b", "c"]);
     let (index, pane) = peek_local(&recent, Step::Back, &focusing("c")).unwrap();
-    recent.begin(index, Modifiers::control(), None);
+    recent.begin(index, Modifiers::control());
     recent.release(Modifiers::none());
     observe_local(&mut recent, &focusing(&pane));
 
@@ -277,10 +282,13 @@ fn a_later_press_without_modifiers_keeps_the_original_hold() {
 }
 
 #[test]
-fn a_press_without_a_hold_commits_at_once() {
+fn a_press_without_a_hold_waits_for_confirmed_focus() {
     let mut recent = visited(&["a", "b", "c"]);
     let (index, _) = peek_local(&recent, Step::Back, &focusing("c")).unwrap();
-    recent.begin(index, Modifiers::none(), None);
+    recent.begin(index, Modifiers::none());
+    assert!(recent.pending());
+    assert_eq!(order(&recent), ["c", "b", "a"]);
+    observe_local(&mut recent, &focusing("b"));
 
     assert!(recent.cycle.is_none());
     assert_eq!(order(&recent), ["b", "c", "a"]);
@@ -430,18 +438,23 @@ fn a_disconnected_endpoint_keeps_its_panes_out_of_reach() {
 }
 
 #[test]
-fn a_restart_during_a_cycle_commits_it_first() {
+fn a_restart_during_a_cycle_keeps_only_confirmed_focus() {
     let mut recent = across_endpoints();
     let (local, remote) = (focusing("b"), remote("x"));
     let endpoints = projections(&[(LOCAL, Some(&local)), (REMOTE, Some(&remote))]);
     let (index, _) = recent
         .peek(Step::Back, &endpoints, Some(&key(REMOTE, "x")))
         .unwrap();
-    recent.begin(index, Modifiers::control(), None);
+    recent.begin(index, Modifiers::control());
+    observe(
+        &mut recent,
+        &[(LOCAL, Some(&local)), (REMOTE, Some(&remote))],
+        LOCAL,
+    );
     let (index, target) = recent
         .peek(Step::Back, &endpoints, Some(&key(LOCAL, "b")))
         .unwrap();
-    recent.begin(index, Modifiers::control(), None);
+    recent.begin(index, Modifiers::control());
 
     // Remote restarts before the focus on A lands.
     let restarted = at("new-boot", HOSTS, Some("x"));
@@ -452,7 +465,8 @@ fn a_restart_during_a_cycle_commits_it_first() {
 
     assert_eq!(target, key(LOCAL, "a"));
     assert!(recent.cycle.is_none());
-    assert_eq!(order(&recent), ["a", "b"]);
+    assert_eq!(order(&recent), ["b", "a"]);
 }
 
 mod completion;
+mod model_check;

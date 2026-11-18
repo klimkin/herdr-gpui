@@ -149,14 +149,23 @@ pub(crate) struct Stream {
 }
 
 impl Stream {
-    fn read(&self, timeout: Duration) -> Result<Chunk> {
+    pub(crate) fn read(&self, timeout: Duration) -> Result<Chunk> {
         let chunk = self.route.take(timeout);
         if let Ok(credit) = u32::try_from(chunk.bytes.len())
             && credit > 0
             && chunk.end.is_none()
         {
-            self.link
-                .send(self.channel, Kind::Credit, &credit.to_le_bytes())?;
+            match self
+                .link
+                .send(self.channel, Kind::Credit, &credit.to_le_bytes())
+            {
+                // A lost connection needs no credit, and the bytes it sent
+                // before it went are still shown. The worker ends every
+                // route before it lets go of the queue, so the next read
+                // reports the loss.
+                Ok(()) | Err(Error::Lost) => {}
+                Err(error) => return Err(error),
+            }
         }
         Ok(chunk)
     }

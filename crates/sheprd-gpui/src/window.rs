@@ -11,6 +11,7 @@ pub(crate) mod chrome_focus;
 pub(crate) mod clipboard;
 #[cfg(target_os = "macos")]
 pub(crate) use clipboard::macos::run_helper as run_clipboard_helper;
+mod clear_notifications;
 mod commands;
 mod config_diagnostic;
 mod construct;
@@ -46,6 +47,7 @@ pub(crate) mod prefix;
 mod recent_panes;
 mod reconnecting;
 mod regions;
+mod rename_offer;
 mod render;
 pub(crate) use render::NoticeCard;
 mod report_issue;
@@ -86,6 +88,8 @@ mod shortcut_tests;
 mod status_bar_tests;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod typing_tests;
 
 #[cfg(feature = "integration-test")]
 use crate::smoke;
@@ -154,6 +158,8 @@ pub(crate) struct SheprdWindow {
     pub(crate) catalog: endpoint::Catalog,
     pub(crate) cell_width: f32,
     /// Native views of the `herdr-acp` chats in this daemon's panes.
+    /// The rail beside an agent chat, shared by every chat in the window.
+    pub(crate) chat_rail_width: crate::panel_resize::PanelWidth,
     pub(crate) chats: crate::chat::Chats,
     /// Snapshots of checkouts taken at agent turns, and the dialog listing them.
     pub(crate) checkpoints: crate::checkpoint::Checkpoints,
@@ -269,6 +275,10 @@ pub(crate) struct SheprdWindow {
     /// The last pointer position over the panes, so a move event that did not move is not use.
     pub(crate) last_pointer: Option<Point<Pixels>>,
     pub(crate) last_queued_options: Option<ConnectOptions>,
+    /// When this window last typed, composed, or pasted, and into which of
+    /// Herdr's panes. Pointer motion, wheels, clicks, and focus changes are
+    /// not typing.
+    pub(crate) last_typed: Option<crate::chat::Typed>,
     /// The status line text the last link this window failed to follow
     /// left, so following the next one can clear it without touching an
     /// unrelated error.
@@ -343,6 +353,7 @@ pub(crate) struct SheprdWindow {
     pub(crate) remote_browser: Vec<crate::remote_browser::Forwarding>,
     /// Sheprd on the other machines the window reaches, and updating it.
     pub(crate) remote_updates: crate::remote_update::RemoteUpdates,
+    pub(crate) remote_work: crate::remote_work::State,
     /// A `worktree.remove` queued after its dialog closed.
     pub(crate) removal: Option<menu::Removal>,
     /// Herdr's resize mode: direction keys resize the focused pane until
@@ -547,6 +558,9 @@ impl SheprdWindow {
         if self.mod_panel_width.chosen().is_none() {
             self.mod_panel_width.restore(chrome.mod_panel_width);
         }
+        if self.chat_rail_width.chosen().is_none() {
+            self.chat_rail_width.restore(chrome.chat_rail_width);
+        }
         if self.review_files_width.chosen().is_none() {
             self.review_files_width.restore(chrome.review_files_width);
         }
@@ -658,7 +672,9 @@ impl SheprdWindow {
         self.save_group_layouts(cx);
         self.poll_browser(window, cx);
         self.poll_remote_browser(window, cx);
+        self.poll_remote_work(window, cx);
         self.poll_chats(window, cx);
+        self.offer_app_rename(window, cx);
         self.offer_browser_skill(window, cx);
         self.poll_sessions(cx);
         self.flush_scrollbar(cx);
@@ -723,6 +739,7 @@ impl SheprdWindow {
             cx.notify();
         }
         self.publish_remote_pull_requests(cx);
+        self.publish_github_account(cx);
         self.sync_remote_hosts(window, cx);
         self.reach_device_tags(cx);
         self.update_merged_cleanup(window, cx);

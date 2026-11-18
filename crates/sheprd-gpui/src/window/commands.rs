@@ -365,6 +365,7 @@ impl SheprdWindow {
         {
             self.input_probe.actions += 1;
         }
+        self.observe_recent_focus(window, cx);
         if self.core_pane_command(command, window, cx)
             || self.core_history_command(command, window, cx)
         {
@@ -649,6 +650,10 @@ impl SheprdWindow {
                 cx.notify();
                 return;
             }
+            Command::ToggleAllHosts => {
+                self.toggle_all_devices(cx);
+                return;
+            }
             Command::ToggleZenMode => {
                 self.toggle_zen(window, cx);
                 return;
@@ -659,6 +664,10 @@ impl SheprdWindow {
             }
             Command::NotificationHistory => {
                 self.show_notification_history(window, cx);
+                return;
+            }
+            Command::ClearAllNotifications => {
+                self.clear_all_notifications(window, cx);
                 return;
             }
             Command::NewCoreTerminal => {
